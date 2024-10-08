@@ -18,16 +18,16 @@ for r in requires:
     else:
         install_requires.append(r)
 
-setup(name='weathergen',
+setup(name='wxsbi',
       version='0.0.1',
-      description='GLM-based weather generators using jax.',
+      description='A flexiblel toolkit for stochastic weather simulation using numpyro/jax and simulation-based inference.',
       author='Brian Groenke, Jakob Wessel',
       maintainer='Brian Groenke',
       maintainer_email='brian.groenke@awi.de',
       license='MIT',
       install_requires=install_requires,
       extras_require=extras_require,
-      packages=['weathergen'],
+      packages=['weathergen','wxsbi'],
       long_description=(open('README.md').read() if os.path.exists('README.md')
                         else ''),
       zip_safe=False)

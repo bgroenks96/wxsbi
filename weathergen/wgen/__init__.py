@@ -1,1 +1,2 @@
-from .wgen_base import WGEN, estimate_wgen_params
+from .wgen_base import WGEN
+from .utils import estimate_wgen_params
