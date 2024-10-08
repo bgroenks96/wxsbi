@@ -1,5 +1,9 @@
 # Data files
 data/
+plots/
+
+# SBI
+sbi-logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

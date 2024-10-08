@@ -146,25 +146,25 @@ class WGEN(ABC):
             tuple: simulator_fn, prior
         """
         prior = StochasticFunctionDistribution(self.prior, unconstrained=True, rng_seed=rng_seed)
-        timestamps = self.timestamps if observable is None else timestamps
-        predictors = self.predictors if observable is None else predictors
+        timestamps = self.timestamps if timestamps is None else timestamps
+        predictors = self.predictors if predictors is None else predictors
         def simulator(_theta):
             theta = _theta if len(_theta.shape) > 1 else _theta.reshape((1,-1))
             batch_size = theta.shape[0]
-            timestamps = timestamps*jnp.ones((batch_size, *timestamps.shape[1:]))
-            predictors = predictors*jnp.ones((batch_size, *predictors.shape[1:]))
+            t = timestamps*jnp.ones((batch_size, *timestamps.shape[1:]))
+            X = predictors*jnp.ones((batch_size, *predictors.shape[1:]))
             params = {k: v for k,v in prior.constrain(theta, as_dict=True).items()}
             with numpyro.handlers.seed(rng_seed=rng_seed):
                 with numpyro.handlers.condition(data=params):
                     if observable is not None:
-                        outputs, obs = self.simulate(timestamps, predictors, observable=observable, batch_size=batch_size)
+                        outputs, obs = self.simulate(t, X, observable=observable, batch_size=batch_size)
                         return obs.T
                     else:
-                        outputs = self.simulate(timestamps, predictors)
+                        outputs = self.simulate(t, X)
                         return jnp.permute_dims(jnp.stack(outputs), (2,1,0))
         return simulator, prior
     
-    def fit(self, method="svi", *args, **kwargs):
+    def fit(self, *args, method="svi", **kwargs):
         if method == "svi":
             return self._fit_svi(*args, **kwargs)
         elif method == "hmcecs":
