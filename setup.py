@@ -20,7 +20,7 @@ for r in requires:
 
 setup(name='wxsbi',
       version='0.0.1',
-      description='A flexiblel toolkit for stochastic weather simulation using numpyro/jax and simulation-based inference.',
+      description='A flexible toolkit for stochastic weather simulation using numpyro/jax and simulation-based inference.',
       author='Brian Groenke, Jakob Wessel',
       maintainer='Brian Groenke',
       maintainer_email='brian.groenke@awi.de',
