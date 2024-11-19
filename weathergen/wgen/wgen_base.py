@@ -1,6 +1,5 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 
-import numpy as np
 import pandas as pd
 import h5py as h5
 import logging
@@ -9,23 +8,22 @@ import jax
 import jax.numpy as jnp
 
 import numpyro
-import numpyro.distributions as dist
-import numpyro.distributions.constraints as constraints
 from numpyro.infer import Predictive, SVI, TraceGraph_ELBO, MCMC, NUTS, HMCECS
 from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
-from numpyro.contrib.control_flow import scan, cond
+from numpyro.contrib.control_flow import scan
 
-from . import wgen_glm_v2
+from . import wgen_glm_v4
 from ..distributions import StochasticFunctionDistribution
-from ..utils import fourier_lsq, extract_time_vars
+from ..utils import extract_time_vars
 
 
 class WGEN(ABC):
+
     def __init__(
         self,
         data: pd.DataFrame,
-        model=wgen_glm_v2,
+        model=wgen_glm_v4.wgen_glm_v4,
         *args,
         predictors=[],
         order=1,
@@ -96,7 +94,7 @@ class WGEN(ABC):
         )
 
     def prior(self, **extra_kwargs):
-        return self.model.prior(
+        return self.model(
             *self.model_args,
             order=self.order,
             num_predictors=self.predictors.shape[-1],
