@@ -51,17 +51,13 @@ class WGEN(ABC):
     def _valid_indices(self, initial_states, obs, order):
         # filter out time indices where initial_states is NaN or Inf at time t and t+1;
         # here indices 0 and 1 correspond to the observed variable and batch dimensions respectively
-        valid_mask_obs = jnp.stack([jnp.isfinite(v) for k, v in obs.items()]).any(
-            axis=[0, 1]
-        )
+        valid_mask_obs = jnp.stack([jnp.isfinite(v) for k, v in obs.items()]).any(axis=[0, 1])
         # here indices 0, 2, and 3 correspond to the batch, lag, and var dimensions
         valid_mask_initial_states = jnp.isfinite(initial_states).all(axis=[0, 2, 3])
         valid_mask = jnp.logical_and(valid_mask_obs[order:], valid_mask_initial_states)
         valid_idx = jnp.where(jnp.logical_and(valid_mask[:-1], valid_mask[1:]))[0]
         if len(valid_idx) < initial_states.shape[1]:
-            logging.warn(
-                f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps"
-            )
+            logging.warn(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
 
     def get_obs(self, data: pd.DataFrame):
@@ -85,13 +81,13 @@ class WGEN(ABC):
         obs = data
         prec_state = jnp.expand_dims(obs["prec"], axis=[-1, -2])
         Tavg_state = jnp.expand_dims(obs["Tavg"], axis=[-1, -2])
-        state = jnp.concat([prec_state, Tavg_state], axis=-1)
+        Trange_state = jnp.expand_dims(obs["Trange"], axis=[-1, -2])
+
+        state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-1)
 
         # concatenate lagged states
         timelen = state.shape[1]
-        return jnp.concat(
-            [state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-2
-        )
+        return jnp.concat([state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-2)
 
     def prior(self, **extra_kwargs):
         return self.model(
@@ -127,24 +123,12 @@ class WGEN(ABC):
             _type_: _description_
         """
         obs = self.obs
-        timestamps = (
-            timestamps if timestamps is not None else self.timestamps[batch_idx, :, :]
-        )
-        predictors = (
-            predictors if predictors is not None else self.predictors[batch_idx, :, :]
-        )
-        initial_states = (
-            initial_states
-            if initial_states is not None
-            else self.initial_states[batch_idx, :, :]
-        )
+        timestamps = timestamps if timestamps is not None else self.timestamps[batch_idx, :, :]
+        predictors = predictors if predictors is not None else self.predictors[batch_idx, :, :]
+        initial_states = initial_states if initial_states is not None else self.initial_states[batch_idx, :, :]
         order = self.order
-        assert (
-            len(timestamps.shape) == 2 and timestamps.shape[1] == 4
-        ), "timestamps must have shape (timesteps, 4)"
-        assert (
-            len(predictors.shape) == 2
-        ), "predictors must have shape (timesteps, variables)"
+        assert len(timestamps.shape) == 2 and timestamps.shape[1] == 4, "timestamps must have shape (timesteps, 4)"
+        assert len(predictors.shape) == 2, "predictors must have shape (timesteps, variables)"
         assert (
             predictors.shape[0] == initial_states.shape[0] + order
         ), "leading time dimension for predictors and initial states must match"
@@ -153,13 +137,9 @@ class WGEN(ABC):
             step = self.prior(**kwargs)
 
         # plate over time dimension starting from the second index
-        with numpyro.plate(
-            "time", len(self.valid_idx), subsample_size=subsample_time
-        ) as i:
+        with numpyro.plate("time", len(self.valid_idx), subsample_size=subsample_time) as i:
             idx = self.valid_idx[i]
-            inputs_i = jnp.concat(
-                [timestamps[idx + order, :], predictors[idx + order, :]], axis=-1
-            )
+            inputs_i = jnp.concat([timestamps[idx + order, :], predictors[idx + order, :]], axis=-1)
             initial_state = initial_states[idx, :]
             obs_i = dict([(k, v[0, idx + order]) for k, v in obs.items()])
             # evaluate step function with time as the batch dimension
@@ -190,28 +170,18 @@ class WGEN(ABC):
         Returns:
             tuple[array,array | None]: outputs, observable
         """
-        timestamps = (
-            timestamps
-            if timestamps is not None
-            else self.timestamps[:, self.first_valid_idx :, :]
-        )
+        timestamps = timestamps if timestamps is not None else self.timestamps[:, self.first_valid_idx :, :]
         assert (
             len(timestamps.shape) == 3 and timestamps.shape[2] == 4
         ), "timestamps must have shape (batch_size, timesteps, 4)"
-        predictors = (
-            predictors
-            if predictors is not None
-            else self.predictors[:, self.first_valid_idx :, :]
-        )
+        predictors = predictors if predictors is not None else self.predictors[:, self.first_valid_idx :, :]
         if batch_size is None:
             batch_size = predictors.shape[0]
         else:
             predictors = predictors * jnp.ones((batch_size, 1, 1))
             timestamps = timestamps * jnp.ones((batch_size, 1, 1))
         initial_state = (
-            initial_state
-            if initial_state is not None
-            else self.initial_states[:, self.first_valid_idx, :, :]
+            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
         )
         initial_state = initial_state * jnp.ones((batch_size, *initial_state.shape[1:]))
         # sample prior
@@ -240,9 +210,7 @@ class WGEN(ABC):
         Returns:
             tuple: simulator_fn, prior
         """
-        prior = StochasticFunctionDistribution(
-            self.prior, unconstrained=True, rng_seed=rng_seed
-        )
+        prior = StochasticFunctionDistribution(self.prior, unconstrained=True, rng_seed=rng_seed)
         timestamps = self.timestamps if timestamps is None else timestamps
         predictors = self.predictors if predictors is None else predictors
 
@@ -257,9 +225,7 @@ class WGEN(ABC):
             with numpyro.handlers.seed(rng_seed=rng_seed):
                 with numpyro.handlers.condition(data=params):
                     if observable is not None:
-                        outputs, obs = self.simulate(
-                            t, X, observable=observable, batch_size=batch_size
-                        )
+                        outputs, obs = self.simulate(t, X, observable=observable, batch_size=batch_size)
                         return obs.T
                     else:
                         outputs, _ = self.simulate(t, X)
@@ -326,9 +292,7 @@ class WGEN(ABC):
     ):
         # if guide is not specified, default to multivariate normal
         if guide is None:
-            guide = AutoMultivariateNormal(
-                self.step, init_loc_fn=numpyro.infer.init_to_median, init_scale=0.1
-            )
+            guide = AutoMultivariateNormal(self.step, init_loc_fn=numpyro.infer.init_to_median, init_scale=0.1)
         self.guide = guide
         svi = SVI(self.step, guide, optimizer, loss=loss)
         if iterations is None:
