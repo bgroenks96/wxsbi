@@ -14,7 +14,6 @@ from ..distributions import BernoulliGamma, from_moments
 def wgen_glm_v5(
     num_predictors: int = 1,
     pred_effect_scale=jnp.ones(1),
-    Tavg_dof_mean=None,
     Tskew_scaled_dispersion_mean=1.0,
     Tair_freqs=[1 / 365.25],
     prec_freqs=[1 / 365.25],
@@ -51,7 +50,6 @@ def wgen_glm_v5(
     tair_mean_step = wgen_glm_v5_Tair_mean(
         num_predictors,
         pred_effect_scale,
-        Tavg_dof_mean,
         freqs=Tair_freqs,
         order=order,
         **kwargs,
@@ -94,78 +92,80 @@ def wgen_glm_v5(
 def wgen_glm_v5_Tair_mean(
     num_predictors: int = 1,
     pred_effect_scale=jnp.ones(1),
-    Tavg_dof_mean=None,
-    freqs=[1 / 365.25],
+    freqs=[1 / 365.25, 2 / 365.2],
     order=1,
     **kwargs,
 ):
 
-    # Location
-    Tavg_lag_effects = numpyro.sample("Tavg_lag", dist.MultivariateNormal(jnp.zeros(order), 0.2 * jnp.eye(order)))
-
     seasonal_dims = 2 * len(freqs)
-    Tavg_seasonal_effects = numpyro.sample(
-        "Tavg_seasonal",
+
+    # Location
+    Tavg_loc_lag_effects = numpyro.sample(
+        "Tavg_loc_lag", dist.MultivariateNormal(jnp.zeros(order), 0.2 * jnp.eye(order))
+    )
+
+    Tavg_loc_seasonal_effects = numpyro.sample(
+        "Tavg_loc_seasonal",
         dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)),
     )
-    Tavg_seasonal_lag_interaction_effects = numpyro.sample(
-        "Tavg_seasonal_lag_interaction",
+    Tavg_loc_seasonal_lag_interaction_effects = numpyro.sample(
+        "Tavg_loc_seasonal_lag_interaction",
         dist.MultivariateNormal(jnp.zeros(seasonal_dims * order), jnp.eye(seasonal_dims * order)),
     )
-    Tavg_pred_effects = numpyro.sample(
-        "Tavg_pred",
+    Tavg_loc_pred_effects = numpyro.sample(
+        "Tavg_loc_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
-    Tavg_mean_effects = jnp.concat(
-        [Tavg_seasonal_effects, Tavg_lag_effects, Tavg_seasonal_lag_interaction_effects, Tavg_pred_effects], axis=-1
+    Tavg_loc_effects = jnp.concat(
+        [
+            Tavg_loc_seasonal_effects,
+            Tavg_loc_lag_effects,
+            Tavg_loc_seasonal_lag_interaction_effects,
+            Tavg_loc_pred_effects,
+        ],
+        axis=-1,
     )
 
     ## Scale
-    log_Tavg_scale_seasonal_effects = numpyro.sample(
-        "log_Tavg_scale_seasonal",
+    Tavg_scale_seasonal_effects = numpyro.sample(
+        "Tavg_loc_scale_seasonal",
         dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)),
     )
-    log_Tavg_scale_pred_effects = numpyro.sample(
-        "log_Tavg_scale_pred",
+    Tavg_scale_pred_effects = numpyro.sample(
+        "Tavg_loc_scale_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
-    log_Tavg_scale_all_effects = jnp.concat([log_Tavg_scale_seasonal_effects, log_Tavg_scale_pred_effects], axis=-1)
-    if Tavg_dof_mean is not None:
-        Tavg_dof = numpyro.sample("Tavg_dof", dist.Exponential(1 / Tavg_dof_mean))
+    Tavg_scale_effects = jnp.concat([Tavg_scale_seasonal_effects, Tavg_scale_pred_effects], axis=-1)
 
     def step(state, inputs, Tavg_obs=None):
         Tavg_prev = state
         i, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
+
         ff_t = utils.fourier_feats(i, freqs, intercept=False) * jnp.ones((Tavg_prev.shape[0], 1))
         seasonal_lag_interactions = jnp.concat([ff_t * Tavg_prev[:, i : (i + 1)] for i in range(order)], axis=1)
-        Tavg_mean_features = jnp.concat([ff_t, Tavg_prev, seasonal_lag_interactions, predictors], axis=1)
 
-        log_Tavg_scale_features = jnp.concat([jnp.zeros_like(ff_t), predictors], axis=1)
-        Tavg_mean = numpyro.deterministic(
-            "Tavg_mean",
-            jnp.sum(Tavg_mean_features * Tavg_mean_effects, axis=1),
+        Tavg_loc_features = jnp.concat([ff_t, Tavg_prev, seasonal_lag_interactions, predictors], axis=1)
+        Tavg_scale_features = jnp.concat([ff_t, predictors], axis=1)
+
+        Tavg_loc = numpyro.deterministic(
+            "Tavg_loc",
+            jnp.sum(Tavg_loc_features * Tavg_loc_effects, axis=1),
         )
         Tavg_scale = numpyro.deterministic(
             "Tavg_scale",
-            jnp.exp(jnp.sum(log_Tavg_scale_features * log_Tavg_scale_all_effects, axis=1)),
+            jnp.exp(jnp.sum(Tavg_scale_features * Tavg_scale_effects, axis=1)),
         )
-        # sample daily mean air temperature including residual variance
+
+        # Sample Tavg
         Tavg_mask = jnp.isfinite(Tavg_obs) if Tavg_obs is not None else True
         with mask(mask=Tavg_mask):
-            if Tavg_dof_mean is not None:
-                Tavg = numpyro.sample(
-                    "Tavg",
-                    dist.StudentT(Tavg_dof, loc=Tavg_mean, scale=Tavg_scale),
-                    obs=Tavg_obs,
-                )
-            else:
-                Tavg = numpyro.sample("Tavg", dist.Normal(Tavg_mean, Tavg_scale), obs=Tavg_obs)
+            Tavg = numpyro.sample("Tavg", dist.Normal(Tavg_loc, Tavg_scale), obs=Tavg_obs)
 
-        Tavg_mean_seasonal = numpyro.deterministic(
-            "Tavg_mean_seasonal", Tavg - jnp.sum(Tavg_seasonal_effects * ff_t, axis=1)
+        Tavg_sample_seasonal_anomaly = numpyro.deterministic(
+            "Tavg_sample_seasonal_anomaly", Tavg - jnp.sum(Tavg_loc_seasonal_effects * ff_t, axis=1)
         )
-        return Tavg, Tavg_mean, Tavg_mean_seasonal
+        return Tavg, Tavg_loc, Tavg_sample_seasonal_anomaly
 
     return step
 
