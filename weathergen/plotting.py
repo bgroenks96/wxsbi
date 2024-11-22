@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
+from functools import partial
+
 
 # QQplots
 def build_qq_plot(obs, sim, ax=None):
@@ -60,11 +62,12 @@ def build_qq_plot_by_season(obs, sim, time, figsize=(20, 5)):
 # Overview plots
 
 
-def ci_sims(x):
-    return (np.quantile(x, 0.05), np.quantile(x, 0.95))
+def ci_sims(x, level=0.9):
+    lower_bound, upper_bound = 0.5 - level / 2, 0.5 + level / 2
+    return (np.quantile(x, lower_bound), np.quantile(x, upper_bound))
 
 
-def get_mean_plot(obs, pred, time, ax=None):
+def get_mean_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -76,12 +79,15 @@ def get_mean_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].mean().reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Mean")
 
 
-def get_std_plot(obs, pred, time, ax=None):
+def get_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -93,12 +99,15 @@ def get_std_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].std().reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Std Dev")
 
 
-def get_max_plot(obs, pred, time, ax=None):
+def get_max_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -110,12 +119,15 @@ def get_max_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].max().reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Max")
 
 
-def get_min_plot(obs, pred, time, ax=None):
+def get_min_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -127,12 +139,15 @@ def get_min_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].min().reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Min")
 
 
-def get_acf_plot(obs, pred, time, lag=1, ax=None):
+def get_acf_plot(obs, pred, time, lag=1, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -152,12 +167,15 @@ def get_acf_plot(obs, pred, time, lag=1, ax=None):
         .reset_index()
     )
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title(f"ACF {lag}")
 
 
-def get_cond_mean_plot(obs, pred, time, ax=None):
+def get_cond_mean_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -173,12 +191,15 @@ def get_cond_mean_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].apply(lambda x: x[x > 0].mean()).reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Cond mean")
 
 
-def get_cond_std_plot(obs, pred, time, ax=None):
+def get_cond_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -195,12 +216,16 @@ def get_cond_std_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].apply(lambda x: x[x > 0].std()).reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Cond std dev")
 
 
-def get_prop_wet_plot(obs, pred, time, ax=None):
+def get_prop_wet_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -216,8 +241,12 @@ def get_prop_wet_plot(obs, pred, time, ax=None):
     df_obs = pd.DataFrame({"obs": obs.squeeze(), "time": time})
     df_obs = df_obs.groupby(df_obs.time.dt.month)["obs"].apply(lambda x: np.mean(x > 0)).reset_index()
 
-    sns.lineplot(df_preds, x="time", y="pred", ax=ax, label="Predictions", linestyle="", errorbar=ci_sims)
-    sns.lineplot(df_obs, x="time", y="obs", ax=ax, label="Observations")
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="pred", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
+    sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Prop wet")
 
 
