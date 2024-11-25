@@ -94,6 +94,7 @@ def wgen_glm_v5_Tair_mean(
     pred_effect_scale=jnp.ones(1),
     freqs=[1 / 365.25, 2 / 365.2],
     order=1,
+    Tavg_lag_in_scale=False,
     **kwargs,
 ):
 
@@ -103,7 +104,6 @@ def wgen_glm_v5_Tair_mean(
     Tavg_loc_lag_effects = numpyro.sample(
         "Tavg_loc_lag", dist.MultivariateNormal(jnp.zeros(order), 0.2 * jnp.eye(order))
     )
-
     Tavg_loc_seasonal_effects = numpyro.sample(
         "Tavg_loc_seasonal",
         dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)),
@@ -135,7 +135,15 @@ def wgen_glm_v5_Tair_mean(
         "Tavg_loc_scale_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
-    Tavg_scale_effects = jnp.concat([Tavg_scale_seasonal_effects, Tavg_scale_pred_effects], axis=-1)
+    if Tavg_lag_in_scale:
+        Tavg_scale_lag_effects = numpyro.sample(
+            "Tavg_scale_lag", dist.MultivariateNormal(jnp.zeros(order), 0.2 * jnp.eye(order))
+        )
+        Tavg_scale_effects = jnp.concat(
+            [Tavg_scale_seasonal_effects, Tavg_scale_lag_effects, Tavg_scale_pred_effects], axis=-1
+        )
+    else:
+        Tavg_scale_effects = jnp.concat([Tavg_scale_seasonal_effects, Tavg_scale_pred_effects], axis=-1)
 
     def step(state, inputs, Tavg_obs=None):
         Tavg_prev = state
@@ -146,7 +154,11 @@ def wgen_glm_v5_Tair_mean(
         seasonal_lag_interactions = jnp.concat([ff_t * Tavg_prev[:, i : (i + 1)] for i in range(order)], axis=1)
 
         Tavg_loc_features = jnp.concat([ff_t, Tavg_prev, seasonal_lag_interactions, predictors], axis=1)
-        Tavg_scale_features = jnp.concat([ff_t, predictors], axis=1)
+
+        if Tavg_lag_in_scale:
+            Tavg_scale_features = jnp.concat([ff_t, jnp.log(jnp.square(Tavg_prev)), predictors], axis=1)
+        else:
+            Tavg_scale_features = jnp.concat([ff_t, predictors], axis=1)
 
         Tavg_loc = numpyro.deterministic(
             "Tavg_loc",
