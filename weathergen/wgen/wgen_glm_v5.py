@@ -279,7 +279,7 @@ def wgen_glm_v5_precip(
 
         Tavg_anom = jnp.sign(Tavg_anom) * jnp.log(jnp.square(Tavg_anom)) / 2
 
-        prev_wet = 1 - jnp.sign(prec_prev)
+        prev_dry = 1 - jnp.sign(prec_prev)
         log_prec_prev = jnp.log(1 + prec_prev)
 
         ff_t = utils.fourier_feats(i, freqs, intercept=False) * jnp.ones((prec_prev.shape[0], 1))
@@ -288,7 +288,7 @@ def wgen_glm_v5_precip(
         seasonal_lag_interactions_amounts = jnp.concat(
             [ff_t * log_prec_prev[:, i : (i + 1)] for i in range(order)], axis=1
         )
-        seasonal_lag_interactions_occ = jnp.concat([ff_t * prev_wet[:, i : (i + 1)] for i in range(order)], axis=1)
+        seasonal_lag_interactions_occ = jnp.concat([ff_t * prev_dry[:, i : (i + 1)] for i in range(order)], axis=1)
         seasonal_Tavg_interactions = (
             utils.fourier_feats(i, freqs=[1 / 365.25], intercept=False) * jnp.ones((prec_prev.shape[0], 1)) * Tavg_anom
         )
@@ -296,7 +296,7 @@ def wgen_glm_v5_precip(
         prec_occ_features = jnp.concat(
             [
                 ff_t,
-                prev_wet,
+                prev_dry,
                 log_prec_prev,
                 seasonal_lag_interactions_occ,
                 seasonal_lag_interactions_amounts,
@@ -309,7 +309,7 @@ def wgen_glm_v5_precip(
         prec_mean_features = jnp.concat(
             [
                 ff_t,
-                prev_wet,
+                prev_dry,
                 log_prec_prev,
                 seasonal_lag_interactions_occ,
                 seasonal_lag_interactions_amounts,
