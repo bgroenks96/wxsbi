@@ -250,6 +250,39 @@ def get_prop_wet_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     ax.set_title("Prop wet")
 
 
+def get_temp_precip_cor_plot(obs_temp, pred_temp, obs_precip, pred_precip, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    df_preds = pd.DataFrame(pred_temp.squeeze().T)
+    df_preds["time"] = time
+    df_preds = df_preds.melt(id_vars="time", value_name="temp")
+
+    df_preds_precip = pd.DataFrame(pred_precip.squeeze().T)
+    df_preds_precip["time"] = time
+    df_preds_precip = df_preds_precip.melt(id_vars="time", value_name="precip")
+
+    df_preds = df_preds.merge(df_preds_precip, on=["time", "variable"])
+
+    df_preds = (
+        df_preds.groupby([df_preds.time.dt.month, df_preds.variable])[["temp", "precip"]]
+        .corr()
+        .iloc[0::2, -1]
+        .reset_index()
+    )
+
+    df_obs = pd.DataFrame({"temp": obs_temp.squeeze(), "precip": obs_precip.squeeze(), "time": time})
+    df_obs = df_obs.groupby(df_obs.time.dt.month)[["temp", "precip"]].corr().iloc[0::2, -1].reset_index()
+
+    for level in levels:
+        sns.lineplot(
+            df_preds, x="time", y="precip", ax=ax, linestyle="", errorbar=partial(ci_sims, level=level), legend=False
+        )
+    sns.lineplot(df_obs, x="time", y="precip", ax=ax, color="black")
+    sns.lineplot(df_obs, x="time", y="precip", ax=ax, color="black")
+    ax.set_title("Correlation temperature - precip")
+
+
 # Grid
 # fig, axs = plt.subplots(10, 10, figsize = (25, 25))
 # for i, ax in enumerate(axs.ravel()):
