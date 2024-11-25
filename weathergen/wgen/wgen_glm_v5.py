@@ -413,29 +413,44 @@ def wgen_glm_v5_Tair_range_skew(
         axis=-1,
     )
 
-    ## skew location
-    Tskew_loc_seasonal_effects = numpyro.sample(
-        "Tskew_seasonal",
+    ## Tskew alpha
+    Tskew_alpha_seasonal_effects = numpyro.sample(
+        "Tskew_alpha_seasonal",
         dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)),
     )
-    Tskew_loc_Tavg_effects = numpyro.sample("Tskew_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1 * jnp.eye(1)))
-    Tskew_loc_pred_effects = numpyro.sample(
-        "Tskew_pred",
+    Tskew_alpha_Tavg_effects = numpyro.sample(
+        "Tskew_alpha_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1 * jnp.eye(1))
+    )
+    Tskew_alpha_pred_effects = numpyro.sample(
+        "Tskew_alpha_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
-    Tskew_all_effects = jnp.concat(
+    Tskew_alpha_all_effects = jnp.concat(
         [
-            Tskew_loc_seasonal_effects,
-            Tskew_loc_Tavg_effects,
-            Tskew_loc_pred_effects,
+            Tskew_alpha_seasonal_effects,
+            Tskew_alpha_Tavg_effects,
+            Tskew_alpha_pred_effects,
         ],
         axis=-1,
     )
-    ## skew dispersion
-    Tskew_scaled_dispersion = numpyro.sample(
-        "Tskew_scaled_dispersion", dist.Exponential(1 / Tskew_scaled_dispersion_mean)
+    ## Tskew beta
+    Tskew_beta_seasonal_effects = numpyro.sample(
+        "Tskew_beta_seasonal",
+        dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)),
     )
-    Tskew_dispersion = Tskew_scaled_dispersion * 100
+    Tskew_beta_Tavg_effects = numpyro.sample("Tskew_beta_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1 * jnp.eye(1)))
+    Tskew_beta_pred_effects = numpyro.sample(
+        "Tskew_beta_pred",
+        dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
+    )
+    Tskew_beta_all_effects = jnp.concat(
+        [
+            Tskew_beta_seasonal_effects,
+            Tskew_beta_Tavg_effects,
+            Tskew_beta_pred_effects,
+        ],
+        axis=-1,
+    )
 
     def step(state, inputs, Trange_obs=None, Tskew_obs=None):
 
@@ -468,7 +483,8 @@ def wgen_glm_v5_Tair_range_skew(
         )  # jax.scipy.special.expit *100
         Trange_beta = jnp.exp(jnp.sum(Trange_features * Trange_beta_all_effects, axis=1))  # *100
 
-        Tskew_loc = jax.scipy.special.expit(jnp.sum(Tskew_features * Tskew_all_effects, axis=1))  # inverse logit
+        Tskew_alpha = jnp.exp(jnp.sum(Tskew_features * Tskew_alpha_all_effects, axis=1))
+        Tskew_beta = jnp.exp(jnp.sum(Tskew_features * Tskew_beta_all_effects, axis=1))
 
         # Sample
         Trange_mask = jnp.isfinite(Trange_obs) if Trange_obs is not None else True
@@ -484,7 +500,7 @@ def wgen_glm_v5_Tair_range_skew(
         with mask(mask=Tskew_mask):
             Tskew = numpyro.sample(
                 "Tskew",
-                dist.Beta(Tskew_loc * Tskew_dispersion, (1 - Tskew_loc) * Tskew_dispersion),
+                dist.Beta(Tskew_alpha, Tskew_beta),
                 obs=Tskew_obs,
             )
 
