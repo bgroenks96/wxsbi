@@ -374,10 +374,15 @@ def wgen_glm_v5_Tair_range_skew(
         "Trange_alpha_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
+    Trange_alpha_seasonal_lag_interaction_effects = numpyro.sample(
+        "Trange_alpha_seasonal_lag_interaction",
+        dist.MultivariateNormal(jnp.zeros(seasonal_dims * order), 0.2 * jnp.eye(seasonal_dims * order)),
+    )
     Trange_alpha_all_effects = jnp.concat(
         [
             Trange_alpha_seasonal_effects,
             Trange_alpha_Trange_prev_effects,
+            Trange_alpha_seasonal_lag_interaction_effects,
             Trange_alpha_pred_effects,
         ],
         axis=-1,
@@ -394,10 +399,15 @@ def wgen_glm_v5_Tair_range_skew(
         "Trange_beta_pred",
         dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)),
     )
+    Trange_beta_seasonal_lag_interaction_effects = numpyro.sample(
+        "Trange_beta_seasonal_lag_interaction",
+        dist.MultivariateNormal(jnp.zeros(seasonal_dims * order), 0.2 * jnp.eye(seasonal_dims * order)),
+    )
     Trange_beta_all_effects = jnp.concat(
         [
             Trange_beta_seasonal_effects,
             Trange_beta_Trange_prev,
+            Trange_beta_seasonal_lag_interaction_effects,
             Trange_beta_pred_effects,
         ],
         axis=-1,
@@ -442,8 +452,14 @@ def wgen_glm_v5_Tair_range_skew(
 
         # Features
         Trange_features = jnp.concat(
-            [ff_t, jnp.log(Trange_prev_scaled), predictors], axis=1
-        )  # Tavg.reshape((-1, 1)), 1-jnp.sign(prec).reshape((-1, 1)), prec.reshape((-1, 1))
+            [
+                ff_t,
+                jnp.log(Trange_prev_scaled),
+                jnp.concat([ff_t * Trange_prev_scaled[:, i : (i + 1)] for i in range(order)], axis=1),
+                predictors,
+            ],
+            axis=1,
+        )
         Tskew_features = jnp.concat([ff_t, Tavg.reshape((-1, 1)), predictors], axis=1)
 
         # Parameters Trange and Tskew
