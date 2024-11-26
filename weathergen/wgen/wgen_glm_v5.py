@@ -77,10 +77,10 @@ def wgen_glm_v5(
         # i, year, month, doy = inputs[:, :4].T
         # predictors = inputs[:, 4:]
         # mean daily air temperature
-        Tavg, Tavg_loc, Tavg_seasonal_anomaly = tair_mean_step(Tavg_prev, inputs, obs["Tavg"])
-        Tavg_seasonal_anomaly = Tavg_seasonal_anomaly.reshape((-1, 1))
+        Tavg = tair_mean_step(Tavg_prev, inputs, obs["Tavg"])  # Tavg_loc, Tavg_seasonal_anomaly
+        Tavg_for_precip = Tavg.reshape((-1, 1))  # Tavg_seasonal_anomaly.reshape((-1, 1))
         # precipitation
-        prec = precip_step((prec_prev, Tavg_seasonal_anomaly), inputs, obs["prec"])
+        prec = precip_step((prec_prev, Tavg_for_precip), inputs, obs["prec"])
         # air temperature range and skew
         Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec, Trange_prev), inputs, obs["Trange"], obs["Tskew"])
         newstate = jnp.expand_dims(jnp.stack([prec, Tavg, Trange]).T, axis=1)
@@ -176,7 +176,7 @@ def wgen_glm_v5_Tair_mean(
         Tavg_sample_seasonal_anomaly = numpyro.deterministic(
             "Tavg_sample_seasonal_anomaly", Tavg - jnp.sum(Tavg_loc_seasonal_effects * ff_t, axis=1)
         )
-        return Tavg, Tavg_loc, Tavg_sample_seasonal_anomaly
+        return Tavg  # , Tavg_loc, Tavg_sample_seasonal_anomaly
 
     return step
 
@@ -273,11 +273,11 @@ def wgen_glm_v5_precip(
     )
 
     def step(state, inputs, prec_obs=None):
-        prec_prev, Tavg_anom = state
+        prec_prev, Tavg = state
         i, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
 
-        Tavg_anom = jnp.sign(Tavg_anom) * jnp.log(jnp.square(Tavg_anom)) / 2
+        Tavg = jnp.sign(Tavg) * jnp.log(jnp.square(Tavg)) / 2
 
         prev_dry = 1 - jnp.sign(prec_prev)
         log_prec_prev = jnp.log(1 + prec_prev)
@@ -290,7 +290,7 @@ def wgen_glm_v5_precip(
         )
         seasonal_lag_interactions_occ = jnp.concat([ff_t * prev_dry[:, i : (i + 1)] for i in range(order)], axis=1)
         seasonal_Tavg_interactions = (
-            utils.fourier_feats(i, freqs=[1 / 365.25], intercept=False) * jnp.ones((prec_prev.shape[0], 1)) * Tavg_anom
+            utils.fourier_feats(i, freqs=[1 / 365.25], intercept=False) * jnp.ones((prec_prev.shape[0], 1)) * Tavg
         )
 
         prec_occ_features = jnp.concat(
@@ -300,7 +300,7 @@ def wgen_glm_v5_precip(
                 log_prec_prev,
                 seasonal_lag_interactions_occ,
                 seasonal_lag_interactions_amounts,
-                Tavg_anom,
+                Tavg,
                 seasonal_Tavg_interactions,
                 predictors,
             ],
@@ -313,7 +313,7 @@ def wgen_glm_v5_precip(
                 log_prec_prev,
                 seasonal_lag_interactions_occ,
                 seasonal_lag_interactions_amounts,
-                Tavg_anom,
+                Tavg,
                 seasonal_Tavg_interactions,
                 predictors,
             ],
