@@ -302,6 +302,189 @@ def get_temp_precip_cor_plot(obs_temp, pred_temp, obs_precip, pred_precip, time,
     ax.set_xlabel("Month")
 
 
+# Grids of overview plots
+from matplotlib.gridspec import GridSpec
+
+
+def Tavg_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 10))
+    fig.suptitle("Tavg")
+
+    gs = GridSpec(4, 4, figure=fig)
+
+    # Row 1
+    build_qq_plot(obs["Tavg"], svi_preds["Tavg"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[1])
+    get_max_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[2])
+    get_min_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[3])
+
+    # Row 4
+    ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[0], lag=1)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[1], lag=2)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    ax_row_4[3].axis("off")
+
+
+def Trange_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 7.5))
+    fig.suptitle("Trange")
+
+    gs = GridSpec(4, 4, figure=fig)
+
+    # Row 1
+    build_qq_plot(obs["Trange"], svi_preds["Trange"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["Trange"], svi_preds["Trange"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[1])
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[2], lag=1)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[3], lag=2)
+
+
+def Tskew_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 7.5))
+    fig.suptitle("Tskew")
+
+    gs = GridSpec(4, 4, figure=fig)
+
+    # Row 1
+    build_qq_plot(obs["Tskew"], svi_preds["Tskew"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[1])
+    get_max_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[2])
+    get_min_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[3])
+
+
+def prec_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 12.5))
+    fig.suptitle("Precipitation")
+
+    gs = GridSpec(5, 4, figure=fig)
+
+    # Row 1
+    build_qq_plot(obs["prec"], svi_preds["prec"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["prec"], svi_preds["prec"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[1])
+    get_max_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[2])
+    get_prop_wet_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[3])
+
+    # Row 4
+    ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
+    get_cond_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[0])
+    get_cond_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[1])
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[2], lag=1)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[3], lag=2)
+
+    # Row 5
+    ax_row_5 = [fig.add_subplot(gs[4, i]) for i in range(4)]
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_5[0], lag=3)
+    get_temp_precip_cor_plot(
+        obs["Tavg"], svi_preds["Tavg"], obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[1]
+    )
+    ax_row_5[2].axis("off")
+    ax_row_5[3].axis("off")
+
+
+def Tmin_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 10))
+    fig.suptitle("Tmin")
+
+    gs = GridSpec(4, 4, figure=fig)
+
+    obs["Tmin"] = basin_data_train["Tair_min"]
+
+    # Row 1
+    build_qq_plot(obs["Tmin"], svi_preds["Tmin"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[1])
+    get_max_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[2])
+    get_min_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[3])
+
+    # Row 4
+    ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[0], lag=1)
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[1], lag=2)
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    ax_row_4[3].axis("off")
+
+
+def Tmax_overview(obs, svi_preds, basin_data_train):
+    fig = plt.figure(layout="tight", figsize=(10, 10))
+    fig.suptitle("Tmax")
+
+    gs = GridSpec(4, 4, figure=fig)
+
+    obs["Tmax"] = basin_data_train["Tair_max"]
+
+    # Row 1
+    build_qq_plot(obs["Tmax"], svi_preds["Tmax"], ax=fig.add_subplot(gs[0, :2]))
+    build_ts_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=fig.add_subplot(gs[0, 2:]))
+
+    # Row 2
+    build_qq_plot_by_season(
+        obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+    )
+
+    # Row 3
+    ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
+    get_mean_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[1])
+    get_max_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[2])
+    get_min_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[3])
+
+    # Row 4
+    ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[0], lag=1)
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[1], lag=2)
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    ax_row_4[3].axis("off")
+
+
 # Grid
 # fig, axs = plt.subplots(10, 10, figsize = (25, 25))
 # for i, ax in enumerate(axs.ravel()):

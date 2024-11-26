@@ -1,6 +1,7 @@
 # Data files
 data/
 plots/
+!notebooks/plots/
 
 # SBI
 sbi-logs/
