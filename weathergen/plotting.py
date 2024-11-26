@@ -21,7 +21,7 @@ def build_qq_plot(obs, sim, ax=None):
                 np.quantile(sim_sorted, 0.9, axis=0) - np.median(sim_sorted, axis=0),
             ]
         ),
-        marker="o",
+        fmt="o",
     )
     ax.axline((0, 0), slope=1, c="black")
     ax.set_ylabel("Simulated")
@@ -45,8 +45,9 @@ def build_ts_plot(obs, sim, time, i=0, ax=None):
     ax.legend()
 
 
-def build_qq_plot_by_season(obs, sim, time, figsize=(20, 5)):
-    fig, axs = plt.subplots(1, 4, figsize=figsize)
+def build_qq_plot_by_season(obs, sim, time, axs=None, figsize=(20, 5)):
+    if axs is None:
+        fig, axs = plt.subplots(1, 4, figsize=figsize)
     build_qq_plot(obs.squeeze()[time.month.isin([3, 4, 5])], sim.squeeze()[:, time.month.isin([3, 4, 5])], ax=axs[0])
     axs[0].set_title("Spring")
     build_qq_plot(obs.squeeze()[time.month.isin([6, 7, 8])], sim.squeeze()[:, time.month.isin([6, 7, 8])], ax=axs[1])
@@ -85,6 +86,8 @@ def get_mean_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Mean")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -105,6 +108,8 @@ def get_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Std Dev")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_max_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -125,6 +130,8 @@ def get_max_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Max")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_min_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -145,6 +152,8 @@ def get_min_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Min")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_acf_plot(obs, pred, time, lag=1, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -173,6 +182,8 @@ def get_acf_plot(obs, pred, time, lag=1, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title(f"ACF {lag}")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_cond_mean_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -197,6 +208,8 @@ def get_cond_mean_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
         )
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Cond mean")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_cond_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -223,6 +236,8 @@ def get_cond_std_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Cond std dev")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_prop_wet_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -248,6 +263,8 @@ def get_prop_wet_plot(obs, pred, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     sns.lineplot(df_obs, x="time", y="obs", ax=ax, color="black")
     ax.set_title("Prop wet")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 def get_temp_precip_cor_plot(obs_temp, pred_temp, obs_precip, pred_precip, time, ax=None, levels=[0.9, 0.8, 0.7, 0.5]):
@@ -280,7 +297,9 @@ def get_temp_precip_cor_plot(obs_temp, pred_temp, obs_precip, pred_precip, time,
         )
     sns.lineplot(df_obs, x="time", y="precip", ax=ax, color="black")
     sns.lineplot(df_obs, x="time", y="precip", ax=ax, color="black")
-    ax.set_title("Correlation temperature - precip")
+    ax.set_title("Corr temp - precip")
+    ax.set_ylabel("")
+    ax.set_xlabel("Month")
 
 
 # Grid
