@@ -353,10 +353,10 @@ def Trange_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[1])
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[2], lag=1)
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[3], lag=2)
+    get_mean_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[0])
+    get_std_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[1])
+    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[2], lag=1)
+    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[3], lag=2)
 
 
 def Tskew_overview(obs, svi_preds, basin_data_train):
@@ -408,12 +408,12 @@ def prec_overview(obs, svi_preds, basin_data_train):
     ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
     get_cond_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[0])
     get_cond_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[1])
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[2], lag=1)
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[3], lag=2)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[2], lag=1)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[3], lag=2)
 
     # Row 5
     ax_row_5 = [fig.add_subplot(gs[4, i]) for i in range(4)]
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_5[0], lag=3)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[0], lag=3)
     get_temp_precip_cor_plot(
         obs["Tavg"], svi_preds["Tavg"], obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[1]
     )
@@ -435,7 +435,7 @@ def Tmin_overview(obs, svi_preds, basin_data_train):
 
     # Row 2
     build_qq_plot_by_season(
-        obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+        obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
     )
 
     # Row 3
@@ -467,7 +467,7 @@ def Tmax_overview(obs, svi_preds, basin_data_train):
 
     # Row 2
     build_qq_plot_by_season(
-        obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
+        obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, axs=[fig.add_subplot(gs[1, i]) for i in range(4)]
     )
 
     # Row 3
