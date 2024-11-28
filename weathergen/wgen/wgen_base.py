@@ -34,9 +34,9 @@ class WGEN(ABC):
         self.model_args = args
         self.model_kwargs = kwargs
         self.order = order
-        self.obs = self.get_obs(data)
+        self.obs = self.model.get_obs(data)
         self.timestamps = extract_time_vars(data.index)
-        self.initial_states = self.get_initial_states(self.obs, order)
+        self.initial_states = self.model.get_initial_states(self.obs, order)
         self.valid_idx = self._valid_indices(self.initial_states, self.obs, order)
         self.first_valid_idx = int(self.valid_idx[0])
         self.predictors = jnp.concat(
@@ -60,37 +60,8 @@ class WGEN(ABC):
             logging.warn(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
 
-    def get_obs(self, data: pd.DataFrame):
-        prec_obs = data["prec"]
-        Tavg_obs = data["Tair_mean"]
-        Trange_obs = data["Tair_max"] - data["Tair_min"]
-        Tskew_obs = (Tavg_obs - data["Tair_min"]) / Trange_obs
-        return {
-            "prec": jnp.array(prec_obs.values).reshape((1, -1)),
-            "Tavg": jnp.array(Tavg_obs.values).reshape((1, -1)),
-            "Trange": jnp.array(Trange_obs.values).reshape((1, -1)),
-            "Tskew": jnp.array(Tskew_obs.values).reshape((1, -1)),
-        }
-
-    def get_initial_states(self, data: pd.DataFrame | tuple[int, int], order):
-        if isinstance(data, tuple):
-            # default to batch_size = 1 and one time step
-            return jnp.zeros((*data, order, 2))
-
-        # initialize from observations
-        obs = data
-        prec_state = jnp.expand_dims(obs["prec"], axis=[-1, -2])
-        Tavg_state = jnp.expand_dims(obs["Tavg"], axis=[-1, -2])
-        Trange_state = jnp.expand_dims(obs["Trange"], axis=[-1, -2])
-
-        state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-1)
-
-        # concatenate lagged states
-        timelen = state.shape[1]
-        return jnp.concat([state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-2)
-
     def prior(self, **extra_kwargs):
-        return self.model(
+        return self.model.prior(
             *self.model_args,
             order=self.order,
             num_predictors=self.predictors.shape[-1],
