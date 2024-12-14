@@ -10,6 +10,31 @@ from numpyro.handlers import mask
 from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
 
+def get_obs(data: pd.DataFrame):
+    prec_obs = data["prec"]
+    Tavg_obs = data["Tair_mean"]
+    Trange_obs = data["Tair_max"] - data["Tair_min"]
+    Tskew_obs = (Tavg_obs - data["Tair_min"]) / Trange_obs
+    return {
+        'prec': jnp.array(prec_obs.values).reshape((1,-1)),
+        'Tavg': jnp.array(Tavg_obs.values).reshape((1,-1)),
+        'Trange': jnp.array(Trange_obs.values).reshape((1,-1)),
+        'Tskew': jnp.array(Tskew_obs.values).reshape((1,-1)),
+    }
+    
+def get_initial_states(obs_or_shape: dict | tuple[int,int], order=1, dropna=True):
+    if isinstance(obs_or_shape, tuple):
+        # default to batch_size = 1 and one time step
+        return jnp.zeros((*obs_or_shape,order,2))
+    # initialize from observations
+    obs = obs_or_shape
+    prec_state = jnp.expand_dims(obs['prec'], axis=[-1,-2])
+    Tavg_state = jnp.expand_dims(obs['Tavg'], axis=[-1,-2])
+    Trange_state = jnp.expand_dims(obs["Trange"], axis=[-1, -2])
+    state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-2)    
+    # concatenate lagged states
+    timelen = state.shape[1]
+    return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-1)
 
 def prior(
     predictors,
@@ -73,11 +98,12 @@ def prior(
 
     def step(state, inputs, obs={"prec": None, "Tavg": None, "Trange": None, "Tskew": None}):
         assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
-        assert state.shape[1] == order, f"state lag dimension does not match order={order}"
+        assert state.shape[2] == order, f"state lag dimension does not match order={order}"
         # unpack state and input tensors;
-        # state is assumed to have shape (batch, lag, vars)
+        # state is assumed to have shape (batch, vars, lag)
         prec_prev = state[:, 0, :]
         Tavg_prev = state[:, 1, :]
+        Trange_prev = state[:, 2, :]
         # i, year, month, doy = inputs[:, :4].T
         # predictors = inputs[:, 4:]
         # mean daily air temperature
@@ -86,8 +112,8 @@ def prior(
         # precipitation
         prec = precip_step((prec_prev, Tavg_anom), inputs, obs["prec"])
         # air temperature range and skew
-        Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec), inputs, obs["Trange"], obs["Tskew"])
-        newstate = jnp.expand_dims(jnp.stack([prec, Tavg]).T, axis=-1)
+        Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec, Trange_prev), inputs, obs["Trange"], obs["Tskew"])
+        newstate = jnp.expand_dims(jnp.stack([prec, Tavg, Trange]).T, axis=-1)
         return jnp.concat([state[:, :, 1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax)
 
     return step
@@ -403,28 +429,3 @@ def wgen_glm_v4_Tair_range_skew(
         return Trange, Tskew, Tmin, Tmax
 
     return step
-
-def get_obs(data: pd.DataFrame):
-    prec_obs = data["prec"]
-    Tavg_obs = data["Tair_mean"]
-    Trange_obs = data["Tair_max"] - data["Tair_min"]
-    Tskew_obs = (Tavg_obs - data["Tair_min"]) / Trange_obs
-    return {
-        'prec': jnp.array(prec_obs.values).reshape((1,-1)),
-        'Tavg': jnp.array(Tavg_obs.values).reshape((1,-1)),
-        'Trange': jnp.array(Trange_obs.values).reshape((1,-1)),
-        'Tskew': jnp.array(Tskew_obs.values).reshape((1,-1)),
-    }
-    
-def get_initial_states(obs_or_shape: dict | tuple[int,int], order=1, dropna=True):
-    if isinstance(obs_or_shape, tuple):
-        # default to batch_size = 1 and one time step
-        return jnp.zeros((*obs_or_shape,order,2))
-    # initialize from observations
-    obs = obs_or_shape
-    prec_state = jnp.expand_dims(obs['prec'], axis=[-1,-2])
-    Tavg_state = jnp.expand_dims(obs['Tavg'], axis=[-1,-2])
-    state = jnp.concat([prec_state, Tavg_state], axis=-2)    
-    # concatenate lagged states
-    timelen = state.shape[1]
-    return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-1)

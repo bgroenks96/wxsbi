@@ -108,9 +108,9 @@ class WGEN_GLM_v5(ABC):
 
         def step(state, inputs, obs={"prec": None, "Tavg": None, "Trange": None, "Tskew": None}):
             assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
-            assert state.shape[1] == order, f"state lag dimension does not match order={order}"
+            assert state.shape[2] == order, f"state lag dimension does not match order={order}"
             # unpack state and input tensors;
-            # state is assumed to have shape (batch, lag, vars)
+            # state is assumed to have shape (batch, vars, lag)
             prec_prev = state[:, 0, :]
             Tavg_prev = state[:, 1, :]
             Trange_prev = state[:, 2, :]

@@ -55,7 +55,7 @@ class WGEN(ABC):
         valid_mask = jnp.logical_and(valid_mask_obs[order:], valid_mask_initial_states)
         valid_idx = jnp.where(jnp.logical_and(valid_mask[:-1], valid_mask[1:]))[0]
         if len(valid_idx) < initial_states.shape[1]:
-            logging.warn(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
+            logging.warning(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
     
     def get_obs(self, data: pd.DataFrame):
