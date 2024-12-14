@@ -11,9 +11,9 @@ from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
         
 
-def prior(num_predictors: int=1, pred_effect_scale=1.0,
-          Tskew_scaled_dispersion_mean=1.0, Tair_freqs=[1/365.25], prec_freqs=[1/365.25], order=1, **kwargs):
-    """Improved WGEN-GLM which generates daily weather variables according to the following procedure:
+def prior(predictors, initial_states, pred_effect_scale=1.0,
+          Tskew_scaled_dispersion_mean=1.0, Tair_freqs=[1/365.25], prec_freqs=[1/365.25], **kwargs):
+    """Improved WGEN-GLM which generates daily air temperature and precipitation according to the following procedure:
         1) Tavg(t) | Tavg(t-1), ...,Tavg(t-n)
         2) prec | prec(t-1), ..., prec(t-n), Tavg(t-1), ...,Tavg(t-n)
         3) Trange | prec, Tavg
@@ -27,7 +27,8 @@ def prior(num_predictors: int=1, pred_effect_scale=1.0,
         Each of these observable variables are parameterized as GLMs defined over some set of linear predictors.
 
     Args:
-        num_predictors (int, optional): number of exogeneous predictors. Defaults to 1.
+        predictors (array): array of exogeneous predictors, including constant terms.
+        initial_states (array): array of initial states of the model.
         pred_effect_scale (float, optional): standard deviation of the predictor effect prior. Defaults to 1.0.
         Tskew_scaled_dispersion_mean (float, optional): prior mean of the Tskew dispersion parameter. Defaults to 1.0.
         Tair_freqs (list, optional): frequencies for air temperature seasonal effects. Defaults to the annual cycle: [1/365.25].
@@ -36,6 +37,8 @@ def prior(num_predictors: int=1, pred_effect_scale=1.0,
     Returns:
         _type_: _description_
     """
+    num_predictors = predictors.shape[-1]
+    order = initial_states.shape[-1]
     assert num_predictors > 0, "number of predictors must be greater than zero"
     
     # with numpyro.plate("batch", batch_size):
@@ -50,9 +53,9 @@ def prior(num_predictors: int=1, pred_effect_scale=1.0,
         assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
         assert state.shape[1] == order, f"state lag dimension does not match order={order}"
         # unpack state and input tensors;
-        # state is assumed to have shape (batch, lag, vars)
-        prec_prev = state[:,:,0]
-        Tavg_prev = state[:,:,1]
+        # state is assumed to have shape (batch, vars, lag)
+        prec_prev = state[:,0,:]
+        Tavg_prev = state[:,1,:]
         i, year, month, doy = inputs[:,:4].T
         predictors = inputs[:,4:]
         # mean daily air temperature
@@ -62,8 +65,8 @@ def prior(num_predictors: int=1, pred_effect_scale=1.0,
         prec = precip_step((prec_prev, Tavg_anom), inputs, obs['prec'])
         # air temperature range and skew
         Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec), inputs, obs['Trange'], obs['Tskew'])
-        newstate = jnp.expand_dims(jnp.stack([prec, Tavg]).T, axis=1)
-        return jnp.concat([state[:,1:,:], newstate], axis=1), (prec, Tmin, Tavg, Tmax)
+        newstate = jnp.expand_dims(jnp.stack([prec, Tavg]).T, axis=-1)
+        return jnp.concat([state[:,:,1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax)
     
     return step
 
@@ -221,7 +224,7 @@ def get_initial_states(obs_or_shape: dict | tuple[int,int], order=1, dropna=True
     obs = obs_or_shape
     prec_state = jnp.expand_dims(obs['prec'], axis=[-1,-2])
     Tavg_state = jnp.expand_dims(obs['Tavg'], axis=[-1,-2])
-    state = jnp.concat([prec_state, Tavg_state], axis=-1)    
+    state = jnp.concat([prec_state, Tavg_state], axis=-2)    
     # concatenate lagged states
     timelen = state.shape[1]
-    return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-2)
+    return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-1)

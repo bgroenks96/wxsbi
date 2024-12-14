@@ -30,12 +30,12 @@ def get_initial_states(obs: dict | tuple[int,int], prec_thresh=0.0):
     return jnp.concat([wet_state, Tavg_state], axis=-1)
 
 def prior(num_predictors: int=1, gamma_shape_mean=0.5, **params):
-    """GLM-based variant of the WGEN Markov-type weather generator.
+    """GLM-based variant of the WGEN Markov-type weather generator. This version is currently deprecated.
 
     Args:
         num_predictors (int, optional): _description_. Defaults to 1.
-        Tair_offset_var (float, optional): _description_. Defaults to 1.0.
         gamma_shape_mean (float, optional): _description_. Defaults to 0.5.
+        params (kwargs): WGEN parameters as returned by `estimate_wgen_params`.
 
     Returns:
         _type_: _description_
