@@ -11,7 +11,7 @@ from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
 
 
-def wgen_glm_v4(
+def prior(
     num_predictors: int = 1,
     pred_effect_scale=jnp.ones(1),
     Tavg_dof_mean=None,

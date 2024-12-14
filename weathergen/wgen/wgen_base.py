@@ -23,15 +23,13 @@ class WGEN(ABC):
     def __init__(
         self,
         data: pd.DataFrame,
-        model=wgen_glm_v4.wgen_glm_v4,
-        *args,
+        model=wgen_glm_v4,
         predictors=[],
         order=1,
         **kwargs,
     ):
         super().__init__()
         self.model = model
-        self.model_args = args
         self.model_kwargs = kwargs
         self.order = order
         self.obs = self.model.get_obs(data)
@@ -59,16 +57,17 @@ class WGEN(ABC):
         if len(valid_idx) < initial_states.shape[1]:
             logging.warn(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
-
-    def prior(self, **extra_kwargs):
-        return self.model.prior(
-            *self.model_args,
-            order=self.order,
-            num_predictors=self.predictors.shape[-1],
-            **self.model_kwargs,
-            **extra_kwargs,
-        )
-
+    
+    def get_obs(self, data: pd.DataFrame):
+        return self.model.get_obs(data)
+    
+    def get_initial_states(self, data: pd.DataFrame, order):
+        initial_states = self.model.get_initial_states(data, order=order)
+        return initial_states
+        
+    def prior(self, predictors, initial_states, **extra_kwargs):
+        return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
+    
     def step(
         self,
         timestamps=None,
@@ -77,7 +76,7 @@ class WGEN(ABC):
         batch_idx=0,
         prior_mask=True,
         subsample_time=None,
-        **kwargs,
+        **kwargs
     ):
         """Evaluates the forward model at each time step independently. Time is used as the batch dimension in the forward evaluation.
            This should be the preferred method for parameter calibration.
@@ -105,8 +104,8 @@ class WGEN(ABC):
         ), "leading time dimension for predictors and initial states must match"
 
         with mask(mask=prior_mask):
-            step = self.prior(**kwargs)
-
+            step = self.prior(predictors, initial_states, **kwargs)
+            
         # plate over time dimension starting from the second index
         with numpyro.plate("time", len(self.valid_idx), subsample_size=subsample_time) as i:
             idx = self.valid_idx[i]
@@ -157,8 +156,8 @@ class WGEN(ABC):
         initial_state = initial_state * jnp.ones((batch_size, *initial_state.shape[1:]))
         # sample prior
         with mask(mask=prior_mask):
-            step = self.prior(**kwargs)
-
+            step = self.prior(predictors, initial_state, **kwargs)
+            
         inputs = jnp.concat([timestamps, predictors], axis=-1)
         # scan over inputs with step/transition function;
         # note that we need to swap the batch and time dimension since scan runs over the leading axis.
@@ -168,8 +167,16 @@ class WGEN(ABC):
             return outputs, obsv
         else:
             return outputs, None
-
-    def simulator(self, timestamps=None, predictors=None, observable=None, rng_seed=0):
+        
+    def simulator(
+        self,
+        timestamps=None,
+        predictors=None,
+        initial_state=None,
+        observable=None,
+        rng_seed=0,
+        **prior_kwargs
+    ):
         """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `observable`.
            The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
            Returns the simulator function as well as the corresponding prior distribution.
@@ -181,10 +188,11 @@ class WGEN(ABC):
         Returns:
             tuple: simulator_fn, prior
         """
-        prior = StochasticFunctionDistribution(self.prior, unconstrained=True, rng_seed=rng_seed)
         timestamps = self.timestamps if timestamps is None else timestamps
         predictors = self.predictors if predictors is None else predictors
-
+        initial_state = initial_state if initial_state is not None else self.initial_states[:,self.first_valid_idx,:,:]
+        prior = StochasticFunctionDistribution(self.prior, fn_args=(predictors, initial_state), fn_kwargs=prior_kwargs,
+                                               unconstrained=True, rng_seed=rng_seed)
         def simulator(_theta):
             theta = _theta if len(_theta.shape) > 1 else _theta.reshape((1, -1))
             batch_size = theta.shape[0]
@@ -209,6 +217,8 @@ class WGEN(ABC):
             return self._fit_svi(*args, **kwargs)
         elif method == "hmcecs":
             return self._fit_hmcecs(*args, **kwargs)
+        elif method == "mcmc":
+            return self._fit_mcmc(*args, **kwargs)
         else:
             raise (Exception(f"fit method {method} not recognized"))
 
@@ -226,14 +236,14 @@ class WGEN(ABC):
             for k, v in f.items():
                 params[k] = jnp.array(v)
         return params
-
-    def predict(self, fit_result, **kwargs):
+        
+    def sample(self, fit_result, **kwargs):
         if fit_result is numpyro.infer.svi.SVIRunResult:
-            return self._predict_svi(fit_result.params, **kwargs)
+            return self._sample_svi(fit_result.params, **kwargs)
         else:
-            raise (Exception("unrecognized fit_result type"))
-
-    def _predict_svi(
+            raise(Exception("unrecognized fit_result type"))
+        
+    def _sample_svi(
         self,
         params,
         guide=None,
@@ -241,7 +251,7 @@ class WGEN(ABC):
         predictors=None,
         observable=None,
         num_samples=100,
-        rng_seed=0,
+        rng_seed=0
     ):
         prng = jax.random.PRNGKey(rng_seed)
         guide = self.guide if guide is None else guide
@@ -285,7 +295,7 @@ class WGEN(ABC):
     ):
         # use autodelta to get MAP estimate
         map_guide = AutoDelta(self.step, init_loc_fn=numpyro.infer.init_to_median)
-        map_result, _ = self._fit_svi(svi_iterations, map_guide, rng=rng, **kwargs)
+        map_result = self._fit_svi(svi_iterations, map_guide, rng=rng, **kwargs)
         with numpyro.handlers.seed(rng_seed=0):
             # get parameter dict; for some reason setting the seed is necessary...
             map_params = map_guide(map_result.params)
@@ -306,3 +316,12 @@ class WGEN(ABC):
         )
         mcmc.run(rng, **kwargs)
         return mcmc
+    
+    def _fit_mcmc(self, num_samples=1000, num_warmup=1000, num_chains=4, chain_method="parallel",
+                  init_strategy=numpyro.infer.init_to_median, mcmc_kernel=NUTS, rng=jax.random.PRNGKey(1234),
+                  kernel_kwargs=dict(), **fn_kwargs):
+        mcmc_kernel = mcmc_kernel(self.step, init_strategy=init_strategy, **kernel_kwargs)
+        mcmc = MCMC(mcmc_kernel, num_warmup=num_warmup, num_samples=num_samples, num_chains=num_chains, chain_method=chain_method)
+        mcmc.run(rng, **fn_kwargs)
+        return mcmc
+    
