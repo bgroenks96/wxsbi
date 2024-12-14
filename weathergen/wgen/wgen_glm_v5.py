@@ -28,7 +28,7 @@ class WGEN_GLM_v5(ABC):
         Tavg_state = jnp.expand_dims(obs["Tavg"], axis=[-1, -2])
         Trange_state = jnp.expand_dims(obs["Trange"], axis=[-1, -2])
 
-        state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-1)
+        state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-2)
 
         # concatenate lagged states
         timelen = state.shape[1]
@@ -50,12 +50,12 @@ class WGEN_GLM_v5(ABC):
 
     def prior(
         self,
-        num_predictors: int = 1,
+        predictors,
+        initial_states,
         pred_effect_scale=jnp.ones(1),
         Tskew_scaled_dispersion_mean=1.0,
         Tair_freqs=[1 / 365.25],
         prec_freqs=[1 / 365.25],
-        order=1,
         **kwargs,
     ):
         """Improved WGEN-GLM which generates daily weather variables according to the following procedure:
@@ -82,8 +82,10 @@ class WGEN_GLM_v5(ABC):
         Returns:
             _type_: _description_
         """
+        num_predictors = predictors.shape[-1]
+        order = initial_states.shape[-1]
         assert num_predictors > 0, "number of predictors must be greater than zero"
-
+    
         # mean air temperature
         tair_mean_step = wgen_glm_v5_Tair_mean(
             num_predictors,
@@ -109,9 +111,9 @@ class WGEN_GLM_v5(ABC):
             assert state.shape[1] == order, f"state lag dimension does not match order={order}"
             # unpack state and input tensors;
             # state is assumed to have shape (batch, lag, vars)
-            prec_prev = state[:, :, 0]
-            Tavg_prev = state[:, :, 1]
-            Trange_prev = state[:, :, 2]
+            prec_prev = state[:, 0, :]
+            Tavg_prev = state[:, 1, :]
+            Trange_prev = state[:, 2, :]
             # i, year, month, doy = inputs[:, :4].T
             # predictors = inputs[:, 4:]
             # mean daily air temperature
@@ -123,8 +125,8 @@ class WGEN_GLM_v5(ABC):
             Trange, Tskew, Tmin, Tmax = tair_range_skew_step(
                 (Tavg, prec, Trange_prev), inputs, obs["Trange"], obs["Tskew"]
             )
-            newstate = jnp.expand_dims(jnp.stack([prec, Tavg, Trange]).T, axis=1)
-            return jnp.concat([state[:, 1:, :], newstate], axis=1), (prec, Tmin, Tavg, Tmax)
+            newstate = jnp.expand_dims(jnp.stack([prec, Tavg, Trange]).T, axis=-1)
+            return jnp.concat([state[:, :, 1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax)
 
         return step
 

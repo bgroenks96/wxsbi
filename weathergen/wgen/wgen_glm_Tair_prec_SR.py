@@ -11,8 +11,17 @@ from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
         
 
-def prior(predictors, initial_states, pred_effect_scale=jnp.ones(1), Tavg_dof_mean=None,
-          Tskew_scaled_dispersion_mean=1.0, SR_freqs=[1/365.25], Tair_freqs=[1/365.25], prec_freqs=[1/365.25], **kwargs):
+def prior(
+    predictors,
+    initial_states,
+    pred_effect_scale=jnp.ones(1),
+    Tavg_dof_mean=None,
+    Tskew_scaled_dispersion_mean=1.0,
+    SR_freqs=[1/365.25],
+    Tair_freqs=[1/365.25],
+    prec_freqs=[1/365.25],
+    **kwargs
+):
     """Improved WGEN-GLM which generates daily air temperature, precipitation, and incoming solar radiation according to:
         1) SR(t) | SR(t-1), ..., SR(t-n)
         2) Tavg(t) | Tavg(t-1), ..., Tavg(t-n), SR(t-1), ..., SR(t-n)
@@ -76,7 +85,14 @@ def prior(predictors, initial_states, pred_effect_scale=jnp.ones(1), Tavg_dof_me
     
     return step
 
-def SR(num_predictors: int=1, pred_effect_scale=jnp.ones(1), freqs=[1/365.25], order=1, lower_bound=0.0, **kwargs):
+def SR(
+    num_predictors: int=1,
+    pred_effect_scale=jnp.ones(1),
+    freqs=[1/365.25],
+    order=1,
+    lower_bound=0.0,
+    **kwargs
+):
     # Note that, throughout this code, cSR refers to cbrt(SR);
     # we use the cbrt transform to nonlinearly map the solar radiation fluxes into a smaller dynamic range
     ## lag effects
@@ -122,7 +138,14 @@ def SR(num_predictors: int=1, pred_effect_scale=jnp.ones(1), freqs=[1/365.25], o
     
     return step
 
-def Tair_mean(num_predictors: int=1, pred_effect_scale=jnp.ones(1), Tavg_dof_mean=None, freqs=[1/365.25], order=1, **kwargs):
+def Tair_mean(
+    num_predictors: int=1,
+    pred_effect_scale=jnp.ones(1),
+    Tavg_dof_mean=None,
+    freqs=[1/365.25],
+    order=1,
+    **kwargs
+):
     ## 2*order lag variables: one set for lags of Tavg and SR
     Tavg_lag_effects = numpyro.sample("Tavg_lag", dist.MultivariateNormal(jnp.zeros(2*order), 0.2*jnp.eye(2*order)))
     Tavg_cSR_effects = numpyro.sample("Tavg_cSR", dist.MultivariateNormal(jnp.zeros(1), jnp.eye(1)))
@@ -165,7 +188,13 @@ def Tair_mean(num_predictors: int=1, pred_effect_scale=jnp.ones(1), Tavg_dof_mea
     
     return step
 
-def precip(num_predictors: int=1, pred_effect_scale=jnp.ones(1), freqs=[1/365.25], order=1, **kwargs):
+def precip(
+    num_predictors: int=1,
+    pred_effect_scale=jnp.ones(1),
+    freqs=[1/365.25],
+    order=1,
+    **kwargs
+):
     ## precipitation occurrence effects;
     ## note that the lag and Tavg effects are univariate but we use mvnormal so that the dimensions align
     seasonal_dims = 2*len(freqs)
@@ -225,8 +254,14 @@ def precip(num_predictors: int=1, pred_effect_scale=jnp.ones(1), freqs=[1/365.25
     
     return step
 
-def Tair_range_skew(num_predictors:int = 1, pred_effect_scale=1.0, Tskew_scaled_dispersion_mean=1.0,
-                    freqs=[1/365.25], order=1, **kwargs):
+def Tair_range_skew(
+    num_predictors:int = 1,
+    pred_effect_scale=1.0,
+    Tskew_scaled_dispersion_mean=1.0,
+    freqs=[1/365.25],
+    order=1,
+    **kwargs
+):
     ## range mean
     seasonal_dims = 2*len(freqs)
     Trange_mean_seasonal_effects = numpyro.sample("Trange_mean_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))

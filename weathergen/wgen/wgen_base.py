@@ -13,7 +13,7 @@ from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
 from numpyro.contrib.control_flow import scan
 
-from . import wgen_glm_v4
+from .wgen_glm_v5 import WGEN_GLM_v5
 from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars
 
@@ -23,7 +23,7 @@ class WGEN(ABC):
     def __init__(
         self,
         data: pd.DataFrame,
-        model=wgen_glm_v4,
+        model=WGEN_GLM_v5(),
         predictors=[],
         order=1,
         **kwargs,
@@ -50,7 +50,7 @@ class WGEN(ABC):
         # filter out time indices where initial_states is NaN or Inf at time t and t+1;
         # here indices 0 and 1 correspond to the observed variable and batch dimensions respectively
         valid_mask_obs = jnp.stack([jnp.isfinite(v) for k, v in obs.items()]).any(axis=[0, 1])
-        # here indices 0, 2, and 3 correspond to the batch, lag, and var dimensions
+        # here indices 0, 2, and 3 correspond to the batch, var, and lag dimensions
         valid_mask_initial_states = jnp.isfinite(initial_states).all(axis=[0, 2, 3])
         valid_mask = jnp.logical_and(valid_mask_obs[order:], valid_mask_initial_states)
         valid_idx = jnp.where(jnp.logical_and(valid_mask[:-1], valid_mask[1:]))[0]
@@ -66,7 +66,12 @@ class WGEN(ABC):
         return initial_states
         
     def prior(self, predictors, initial_states, **extra_kwargs):
-        return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
+        return self.model.prior(
+            predictors,
+            initial_states,
+            **self.model_kwargs,
+            **extra_kwargs
+        )
     
     def step(
         self,
@@ -110,7 +115,7 @@ class WGEN(ABC):
         with numpyro.plate("time", len(self.valid_idx), subsample_size=subsample_time) as i:
             idx = self.valid_idx[i]
             inputs_i = jnp.concat([timestamps[idx + order, :], predictors[idx + order, :]], axis=-1)
-            initial_state = initial_states[idx, :]
+            initial_state = initial_states[idx, :, :]
             obs_i = dict([(k, v[0, idx + order]) for k, v in obs.items()])
             # evaluate step function with time as the batch dimension
             pred_states, outputs = step(initial_state, inputs_i, obs_i)
