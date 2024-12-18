@@ -15,24 +15,19 @@ from ..distributions import BernoulliGamma, from_moments
 
 class WGEN_GLM_v5(ABC):
 
-    def get_initial_states(self, data: pd.DataFrame | tuple[int, int], order):
-        """Returns initial states"""
-
-        if isinstance(data, tuple):
+    def get_initial_states(self, obs_or_shape: dict | tuple[int, int], order=1, dropna=True):
+        if isinstance(obs_or_shape, tuple):
             # default to batch_size = 1 and one time step
-            return jnp.zeros((*data, order, 2))
-
+            return jnp.zeros((*obs_or_shape, order, 2))
         # initialize from observations
-        obs = data
+        obs = obs_or_shape
         prec_state = jnp.expand_dims(obs["prec"], axis=[-1, -2])
         Tavg_state = jnp.expand_dims(obs["Tavg"], axis=[-1, -2])
         Trange_state = jnp.expand_dims(obs["Trange"], axis=[-1, -2])
-
         state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-2)
-
         # concatenate lagged states
         timelen = state.shape[1]
-        return jnp.concat([state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-2)
+        return jnp.concat([state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-1)
 
     def get_obs(self, data: pd.DataFrame):
         """Returns the observations"""
@@ -85,7 +80,7 @@ class WGEN_GLM_v5(ABC):
         num_predictors = predictors.shape[-1]
         order = initial_states.shape[-1]
         assert num_predictors > 0, "number of predictors must be greater than zero"
-    
+
         # mean air temperature
         tair_mean_step = wgen_glm_v5_Tair_mean(
             num_predictors,
