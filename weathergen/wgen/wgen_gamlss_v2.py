@@ -9,11 +9,10 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.handlers import mask
 
-from .. import utils, data
-from ..distributions import BernoulliGamma, from_moments
+from .. import utils
 
 
-class WGEN_GLM_v5(ABC):
+class WGEN_GAMLSS_v2(ABC):
 
     def get_initial_states(self, obs_or_shape: dict | tuple[int, int], order=1, dropna=True):
         if isinstance(obs_or_shape, tuple):

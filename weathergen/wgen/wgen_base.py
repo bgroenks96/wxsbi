@@ -13,7 +13,7 @@ from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
 from numpyro.contrib.control_flow import scan
 
-from .wgen_glm_v5 import WGEN_GLM_v5
+from .wgen_gamlss_v2 import WGEN_GAMLSS_v2
 from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars
 
@@ -23,7 +23,7 @@ class WGEN(ABC):
     def __init__(
         self,
         data: pd.DataFrame,
-        model=WGEN_GLM_v5(),
+        model=WGEN_GAMLSS_v2(),
         predictors=[],
         order=1,
         **kwargs,
@@ -57,22 +57,17 @@ class WGEN(ABC):
         if len(valid_idx) < initial_states.shape[1]:
             logging.warning(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
-    
+
     def get_obs(self, data: pd.DataFrame):
         return self.model.get_obs(data)
-    
+
     def get_initial_states(self, data: pd.DataFrame, order):
         initial_states = self.model.get_initial_states(data, order=order)
         return initial_states
-        
+
     def prior(self, predictors, initial_states, **extra_kwargs):
-        return self.model.prior(
-            predictors,
-            initial_states,
-            **self.model_kwargs,
-            **extra_kwargs
-        )
-    
+        return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
+
     def step(
         self,
         timestamps=None,
@@ -81,7 +76,7 @@ class WGEN(ABC):
         batch_idx=0,
         prior_mask=True,
         subsample_time=None,
-        **kwargs
+        **kwargs,
     ):
         """Evaluates the forward model at each time step independently. Time is used as the batch dimension in the forward evaluation.
            This should be the preferred method for parameter calibration.
@@ -110,7 +105,7 @@ class WGEN(ABC):
 
         with mask(mask=prior_mask):
             step = self.prior(predictors, initial_states, **kwargs)
-            
+
         # plate over time dimension starting from the second index
         with numpyro.plate("time", len(self.valid_idx), subsample_size=subsample_time) as i:
             idx = self.valid_idx[i]
@@ -162,7 +157,7 @@ class WGEN(ABC):
         # sample prior
         with mask(mask=prior_mask):
             step = self.prior(predictors, initial_state, **kwargs)
-            
+
         inputs = jnp.concat([timestamps, predictors], axis=-1)
         # scan over inputs with step/transition function;
         # note that we need to swap the batch and time dimension since scan runs over the leading axis.
@@ -172,15 +167,9 @@ class WGEN(ABC):
             return outputs, obsv
         else:
             return outputs, None
-        
+
     def simulator(
-        self,
-        timestamps=None,
-        predictors=None,
-        initial_state=None,
-        observable=None,
-        rng_seed=0,
-        **prior_kwargs
+        self, timestamps=None, predictors=None, initial_state=None, observable=None, rng_seed=0, **prior_kwargs
     ):
         """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `observable`.
            The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
@@ -195,9 +184,17 @@ class WGEN(ABC):
         """
         timestamps = self.timestamps if timestamps is None else timestamps
         predictors = self.predictors if predictors is None else predictors
-        initial_state = initial_state if initial_state is not None else self.initial_states[:,self.first_valid_idx,:,:]
-        prior = StochasticFunctionDistribution(self.prior, fn_args=(predictors, initial_state), fn_kwargs=prior_kwargs,
-                                               unconstrained=True, rng_seed=rng_seed)
+        initial_state = (
+            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
+        )
+        prior = StochasticFunctionDistribution(
+            self.prior,
+            fn_args=(predictors, initial_state),
+            fn_kwargs=prior_kwargs,
+            unconstrained=True,
+            rng_seed=rng_seed,
+        )
+
         def simulator(_theta):
             theta = _theta if len(_theta.shape) > 1 else _theta.reshape((1, -1))
             batch_size = theta.shape[0]
@@ -241,22 +238,15 @@ class WGEN(ABC):
             for k, v in f.items():
                 params[k] = jnp.array(v)
         return params
-        
+
     def sample(self, fit_result, **kwargs):
         if fit_result is numpyro.infer.svi.SVIRunResult:
             return self._sample_svi(fit_result.params, **kwargs)
         else:
-            raise(Exception("unrecognized fit_result type"))
-        
+            raise (Exception("unrecognized fit_result type"))
+
     def _sample_svi(
-        self,
-        params,
-        guide=None,
-        timestamps=None,
-        predictors=None,
-        observable=None,
-        num_samples=100,
-        rng_seed=0
+        self, params, guide=None, timestamps=None, predictors=None, observable=None, num_samples=100, rng_seed=0
     ):
         prng = jax.random.PRNGKey(rng_seed)
         guide = self.guide if guide is None else guide
@@ -321,12 +311,26 @@ class WGEN(ABC):
         )
         mcmc.run(rng, **kwargs)
         return mcmc
-    
-    def _fit_mcmc(self, num_samples=1000, num_warmup=1000, num_chains=4, chain_method="parallel",
-                  init_strategy=numpyro.infer.init_to_median, mcmc_kernel=NUTS, rng=jax.random.PRNGKey(1234),
-                  kernel_kwargs=dict(), **fn_kwargs):
+
+    def _fit_mcmc(
+        self,
+        num_samples=1000,
+        num_warmup=1000,
+        num_chains=4,
+        chain_method="parallel",
+        init_strategy=numpyro.infer.init_to_median,
+        mcmc_kernel=NUTS,
+        rng=jax.random.PRNGKey(1234),
+        kernel_kwargs=dict(),
+        **fn_kwargs,
+    ):
         mcmc_kernel = mcmc_kernel(self.step, init_strategy=init_strategy, **kernel_kwargs)
-        mcmc = MCMC(mcmc_kernel, num_warmup=num_warmup, num_samples=num_samples, num_chains=num_chains, chain_method=chain_method)
+        mcmc = MCMC(
+            mcmc_kernel,
+            num_warmup=num_warmup,
+            num_samples=num_samples,
+            num_chains=num_chains,
+            chain_method=chain_method,
+        )
         mcmc.run(rng, **fn_kwargs)
         return mcmc
-    
