@@ -13,7 +13,7 @@ from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
 from numpyro.contrib.control_flow import scan
 
-from .wgen_gamlss_v2 import WGEN_GAMLSS_v2
+from .wgen_gamlss import WGEN_GAMLSS
 from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars
 
@@ -23,7 +23,7 @@ class WGEN(ABC):
     def __init__(
         self,
         data: pd.DataFrame,
-        model=WGEN_GAMLSS_v2(),
+        model=WGEN_GAMLSS(),
         predictors=[],
         order=1,
         **kwargs,

@@ -42,15 +42,11 @@ class Test_WGEN_GLM(unittest.TestCase):
 
     def test_wgen_glm(self):
         data = make_test_data()
-        wgen_glm_smoke_test(data, wx.wgen_glm_v3)
+        wgen_glm_smoke_test(data, wx.wgen_glm_v2)
 
-    def test_wgen_glm_v4(self):
+    def test_wgen_gamlss(self):
         data = make_test_data()
-        wgen_glm_smoke_test(data, wx.wgen_gamlss_v1)
-
-    def test_wgen_glm_v5(self):
-        data = make_test_data()
-        wgen_glm_smoke_test(data, wx.WGEN_GAMLSS_v2())
+        wgen_glm_smoke_test(data, wx.WGEN_GAMLSS())
 
 
 if __name__ == "__main__":
