@@ -11,7 +11,7 @@ from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
         
 
-def prior(predictors, initial_states, pred_effect_scale=1.0,
+def prior(predictors, initial_states, pred_effect_scale=jnp.ones(1), Tavg_dof_mean=None,
           Tskew_scaled_dispersion_mean=1.0, Tair_freqs=[1/365.25], prec_freqs=[1/365.25], **kwargs):
     """Improved WGEN-GLM which generates daily air temperature and precipitation according to the following procedure:
         1) Tavg(t) | Tavg(t-1), ...,Tavg(t-n)
@@ -27,8 +27,8 @@ def prior(predictors, initial_states, pred_effect_scale=1.0,
         Each of these observable variables are parameterized as GLMs defined over some set of linear predictors.
 
     Args:
-        predictors (array): array of exogeneous predictors, including constant terms.
-        initial_states (array): array of initial states of the model.
+        num_predictors (int, optional): number of exogeneous predictors. Defaults to 1.
+        Tavg_dof_mean (float, optional): if not None, specifies the prior mean of the DoF parameter for a Student-t likelihood. Defaults to None, i.e. Gaussian likelihood.
         pred_effect_scale (float, optional): standard deviation of the predictor effect prior. Defaults to 1.0.
         Tskew_scaled_dispersion_mean (float, optional): prior mean of the Tskew dispersion parameter. Defaults to 1.0.
         Tair_freqs (list, optional): frequencies for air temperature seasonal effects. Defaults to the annual cycle: [1/365.25].
@@ -41,9 +41,8 @@ def prior(predictors, initial_states, pred_effect_scale=1.0,
     order = initial_states.shape[-1]
     assert num_predictors > 0, "number of predictors must be greater than zero"
     
-    # with numpyro.plate("batch", batch_size):
     # mean air temperature
-    tair_mean_step = Tair_mean(num_predictors, pred_effect_scale, freqs=Tair_freqs, order=order, **kwargs)        
+    tair_mean_step = Tair_mean(num_predictors, pred_effect_scale, Tavg_dof_mean, freqs=Tair_freqs, order=order, **kwargs)        
     # precipitation
     precip_step = precip(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
     # air temperature range and skew
@@ -51,7 +50,7 @@ def prior(predictors, initial_states, pred_effect_scale=1.0,
     
     def step(state, inputs, obs={'prec': None, 'Tavg': None, 'Trange': None, 'Tskew': None}):
         assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
-        assert state.shape[1] == order, f"state lag dimension does not match order={order}"
+        assert state.shape[2] == order, f"state lag dimension does not match order={order}"
         # unpack state and input tensors;
         # state is assumed to have shape (batch, vars, lag)
         prec_prev = state[:,0,:]
@@ -70,20 +69,21 @@ def prior(predictors, initial_states, pred_effect_scale=1.0,
     
     return step
 
-def Tair_mean(num_predictors: int=1, pred_effect_scale=1.0, freqs=[1/365.25], order=1, **kwargs):
+def Tair_mean(num_predictors: int=1, pred_effect_scale=jnp.ones(1), Tavg_dof_mean=None, freqs=[1/365.25], order=1, **kwargs):
     ## autocorrelation for air temperature is bounded from [-1,1] to prevent divergence
-    Tavg_lag_effects = numpyro.sample("Tavg_lag", dist.Uniform(-jnp.ones(order), jnp.ones(order)).to_event(1))
+    Tavg_lag_effects = numpyro.sample("Tavg_lag", dist.MultivariateNormal(jnp.zeros(order), 0.2*jnp.eye(order)))
     ## fourier feature coefficients (seasonal effects)
     seasonal_dims = 2*len(freqs)
     Tavg_seasonal_effects = numpyro.sample("Tavg_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
-    Tavg_seasonal_lag1_effects = numpyro.sample("Tavg_seasonal&lag1", dist.MultivariateNormal(jnp.zeros(seasonal_dims), 0.5*jnp.eye(seasonal_dims)))
-    Tavg_pred_effects = numpyro.sample("Tavg_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
+    Tavg_seasonal_lag1_effects = numpyro.sample("Tavg_seasonal&lag1", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
+    Tavg_pred_effects = numpyro.sample("Tavg_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
     Tavg_anom_effects = jnp.concat([Tavg_lag_effects, Tavg_seasonal_lag1_effects, Tavg_pred_effects], axis=-1)
     ## residual scale
     log_Tavg_scale_seasonal_effects = numpyro.sample("log_Tavg_scale_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
-    log_Tavg_scale_pred_effects = numpyro.sample("log_Tavg_scale_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
+    log_Tavg_scale_pred_effects = numpyro.sample("log_Tavg_scale_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
     log_Tavg_scale_all_effects = jnp.concat([log_Tavg_scale_seasonal_effects, log_Tavg_scale_pred_effects], axis=-1)
-    # Tavg_dof = numpyro.sample("Tavg_dof", dist.Exponential(1/Tavg_dof_mean))
+    if Tavg_dof_mean is not None:
+        Tavg_dof = numpyro.sample("Tavg_dof", dist.Exponential(1/Tavg_dof_mean))
     
     def step(state, inputs, Tavg_obs=None):
         Tavg_prev = state
@@ -96,36 +96,43 @@ def Tair_mean(num_predictors: int=1, pred_effect_scale=1.0, freqs=[1/365.25], or
         Tavg_mean_anom_features = jnp.concat([Tavg_prev, seasonal_lag1, predictors], axis=1)
         log_Tavg_scale_features = jnp.concat([ff_t, predictors], axis=1)
         Tavg_mean = numpyro.deterministic("Tavg_mean", Tavg_mean_seasonal + jnp.sum(Tavg_mean_anom_features*Tavg_anom_effects, axis=1))
-        Tavg_scale = jnp.exp(jnp.sum(log_Tavg_scale_features*log_Tavg_scale_all_effects, axis=1))
+        Tavg_scale = numpyro.deterministic("Tavg_scale", jnp.exp(jnp.sum(log_Tavg_scale_features*log_Tavg_scale_all_effects, axis=1)))
         # sample daily mean air temperature including residual variance
         Tavg_mask = jnp.isfinite(Tavg_obs) if Tavg_obs is not None else True
         with mask(mask=Tavg_mask):
-            Tavg = numpyro.sample("Tavg", dist.Normal(Tavg_mean, Tavg_scale), obs=Tavg_obs)
-            # Tavg = numpyro.sample("Tavg", dist.StudentT(Tavg_dof, loc=Tavg_mean, scale=Tavg_scale), obs=Tavg_obs)
+            if Tavg_dof_mean is not None:
+                Tavg = numpyro.sample("Tavg", dist.StudentT(Tavg_dof, loc=Tavg_mean, scale=Tavg_scale), obs=Tavg_obs)
+            else:
+                Tavg = numpyro.sample("Tavg", dist.Normal(Tavg_mean, Tavg_scale), obs=Tavg_obs)
         return Tavg, Tavg_mean, Tavg_mean_seasonal
     
     return step
 
-def precip(num_predictors: int=1, pred_effect_scale=1.0, freqs=[1/365.25], order=1, **kwargs):
+def precip(num_predictors: int=1, pred_effect_scale=jnp.ones(1), freqs=[1/365.25], order=1, **kwargs):
     ## precipitation occurrence effects;
     ## note that the lag and Tavg effects are univariate but we use mvnormal so that the dimensions align
     seasonal_dims = 2*len(freqs)
-    precip_occ_seasonal_effects = numpyro.sample("precip_occ_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)/seasonal_dims))
-    precip_occ_lag_effects = numpyro.sample("precip_occ_lag", dist.Uniform(-jnp.ones(2*order), jnp.ones(2*order)).to_event(1))
+    precip_occ_seasonal_effects = numpyro.sample("precip_occ_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
+    precip_occ_lag_effects = numpyro.sample("precip_occ_lag", dist.MultivariateNormal(jnp.zeros(2*order), 0.2*jnp.eye(2*order)))
     precip_occ_Tavg_effects = numpyro.sample("precip_occ_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
-    precip_occ_pred_effects = numpyro.sample("precip_occ_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
-    # precip_occ_seasonal_lag_interaction = numpyro.sample("precip_occ_seasonal&lag", dist.Uniform(-jnp.ones(order), jnp.ones(order)).to_event(1))
-    precip_occ_all_effects = jnp.concat([precip_occ_seasonal_effects, precip_occ_lag_effects, precip_occ_Tavg_effects, precip_occ_pred_effects], axis=-1)
+    precip_occ_pred_effects = numpyro.sample("precip_occ_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
+    precip_occ_seasonal_lag1_effects = numpyro.sample("precip_occ_seasonal&lag1", dist.Uniform(-jnp.ones(seasonal_dims), jnp.ones(seasonal_dims)).to_event(1))
+    precip_occ_all_effects = jnp.concat([precip_occ_seasonal_effects, precip_occ_lag_effects, precip_occ_Tavg_effects, precip_occ_seasonal_lag1_effects, precip_occ_pred_effects], axis=-1)
     ## precipitation intensity effects
-    precip_mean_seasonal_effects = numpyro.sample("precip_mean_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)/seasonal_dims))
-    # precip_mean_Tavg_effects = numpyro.sample("precip_mean_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
-    precip_mean_lag_effects = numpyro.sample("precip_mean_lag", dist.Uniform(-jnp.ones(2*order), jnp.ones(2*order)).to_event(1))
+    precip_mean_seasonal_effects = numpyro.sample("precip_mean_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
+    precip_mean_Tavg_effects = numpyro.sample("precip_mean_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
+    precip_mean_lag_effects = numpyro.sample("precip_mean_lag", dist.MultivariateNormal(jnp.zeros(2*order), 0.2*jnp.eye(2*order)))
     precip_mean_seasonal_lag1_effects = numpyro.sample("precip_mean_seasonal&lag1", dist.Uniform(-jnp.ones(seasonal_dims), jnp.ones(seasonal_dims)).to_event(1))
-    precip_mean_pred_effects = numpyro.sample("precip_mean_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
-    precip_mean_all_effects = jnp.concat([precip_mean_seasonal_effects, precip_mean_lag_effects, precip_mean_seasonal_lag1_effects, precip_mean_pred_effects], axis=-1)
+    precip_mean_pred_effects = numpyro.sample("precip_mean_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
+    precip_mean_all_effects = jnp.concat([precip_mean_seasonal_effects, precip_mean_lag_effects, precip_mean_Tavg_effects, precip_mean_seasonal_lag1_effects, precip_mean_pred_effects], axis=-1)
     ## gamma shape parameter; smaller values imply more concentration near zero
-    precip_gamma_shape = numpyro.sample("precip_gamma_shape", dist.Exponential(1.0))
-
+    precip_shape_seasonal_effects = numpyro.sample("precip_shape_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
+    precip_shape_lag_effects = numpyro.sample("precip_shape_lag", dist.MultivariateNormal(jnp.zeros(2*order), 0.2*jnp.eye(2*order)))
+    precip_shape_seasonal_lag1_effects = numpyro.sample("precip_shape_seasonal&lag1", dist.Uniform(-jnp.ones(seasonal_dims), jnp.ones(seasonal_dims)).to_event(1))
+    # precip_shape_Tavg_effects = numpyro.sample("precip_shape_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
+    precip_shape_pred_effects = numpyro.sample("precip_shape_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
+    precip_shape_all_effects = jnp.concat([precip_shape_seasonal_effects, precip_shape_lag_effects, precip_shape_seasonal_lag1_effects, precip_shape_pred_effects], axis=-1)
+        
     def step(state, inputs, prec_obs=None):
         prec_prev, Tavg_anom = state
         i, year, month, doy = inputs[:,:4].T
@@ -134,14 +141,19 @@ def precip(num_predictors: int=1, pred_effect_scale=1.0, freqs=[1/365.25], order
         # construct precipitation features
         prev_wet = jnp.sign(prec_prev)
         log_prev_prec = jnp.log(1 + prec_prev)
-        prec_occ_features = jnp.concat([ff_t, 1 - prev_wet, log_prev_prec, Tavg_anom, predictors], axis=1)
-        prec_mean_features = jnp.concat([ff_t, 1 - prev_wet, log_prev_prec, ff_t*log_prev_prec[:,-1:], predictors], axis=1)
+        ff_t_lag1 = ff_t*log_prev_prec[:,-1:]
+        prec_occ_features = jnp.concat([ff_t, 1 - prev_wet, log_prev_prec, Tavg_anom, ff_t_lag1, predictors], axis=1)
+        prec_mean_features = jnp.concat([ff_t, 1 - prev_wet, log_prev_prec, Tavg_anom, ff_t_lag1, predictors], axis=1)
+        prec_shape_features = jnp.concat([ff_t, 1 - prev_wet, log_prev_prec, ff_t_lag1, predictors], axis=1)
         # linear predictors
         eta_precip_occ = jnp.sum(prec_occ_features*precip_occ_all_effects, axis=1)
         eta_precip_mean = jnp.sum(prec_mean_features*precip_mean_all_effects, axis=1)
+        eta_precip_shape = jnp.sum(prec_shape_features*precip_shape_all_effects, axis=1)
         # apply link functions
-        p_wet = jax.nn.sigmoid(eta_precip_occ)
-        precip_gamma_rate = numpyro.deterministic("precip_gamma_rate", precip_gamma_shape / jax.nn.softplus(eta_precip_mean))
+        p_wet = numpyro.deterministic("p_wet", jax.nn.sigmoid(eta_precip_occ))
+        # we use sotplus link for the gamma shape parameter to discourage very large values in the prior
+        preicp_gamma_shape = numpyro.deterministic("precip_gamma_shape", jax.nn.softplus(eta_precip_shape))
+        precip_gamma_rate = numpyro.deterministic("precip_gamma_rate", preicp_gamma_shape / jax.nn.softplus(eta_precip_mean))
         # sample precipication from bernoulli-gamma with prob p_wet
         # prec = numpyro.sample("prec", BernoulliGamma(p_wet, gamma_shape, gamma_rate), obs=obs['prec'])
         prec_occ_obs = prec_obs > 0.0 if prec_obs is not None else None
@@ -149,7 +161,7 @@ def precip(num_predictors: int=1, pred_effect_scale=1.0, freqs=[1/365.25], order
         with mask(mask=jnp.isfinite(prec_obs) if prec_obs is not None else True):
             prec_occ = numpyro.sample("prec_occ", dist.Bernoulli(p_wet), obs=prec_occ_obs)
         with mask(mask=prec_mask):
-            prec_amount = numpyro.sample("prec_amount", dist.Gamma(precip_gamma_shape, precip_gamma_rate), obs=prec_obs)
+            prec_amount = numpyro.sample("prec_amount", dist.Gamma(preicp_gamma_shape, precip_gamma_rate), obs=prec_obs)
         prec = numpyro.deterministic("prec", jnp.where(prec_occ, prec_amount, 0.0))
         return prec
     
@@ -162,15 +174,19 @@ def Tair_range_skew(num_predictors:int = 1, pred_effect_scale=1.0, Tskew_scaled_
     Trange_mean_seasonal_effects = numpyro.sample("Trange_mean_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
     Trange_mean_Tavg_effects = numpyro.sample("Trange_mean_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
     Trange_mean_wet_effects = numpyro.sample("Trange_mean_wet", dist.MultivariateNormal(jnp.zeros(1), jnp.eye(1)))
-    Trange_mean_pred_effects = numpyro.sample("Trange_mean_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
+    Trange_mean_pred_effects = numpyro.sample("Trange_mean_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
     Trange_mean_all_effects = jnp.concat([Trange_mean_seasonal_effects, Trange_mean_Tavg_effects, Trange_mean_wet_effects, Trange_mean_pred_effects], axis=-1)
     ## range shape
-    Trange_gamma_shape = numpyro.sample("Trange_gamma_shape", dist.Exponential(1.0))
+    Trange_shape_seasonal_effects = numpyro.sample("Trange_shape_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
+    Trange_shape_Tavg_effects = numpyro.sample("Trange_shape_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
+    Trange_shape_wet_effects = numpyro.sample("Trange_shape_wet", dist.MultivariateNormal(jnp.zeros(1), jnp.eye(1)))
+    Trange_shape_pred_effects = numpyro.sample("Trange_shape_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
+    Trange_shape_all_effects = jnp.concat([Trange_shape_seasonal_effects, Trange_shape_Tavg_effects, Trange_shape_wet_effects, Trange_shape_pred_effects], axis=-1)
     ## skew mean
     Tskew_seasonal_effects = numpyro.sample("Tskew_seasonal", dist.MultivariateNormal(jnp.zeros(seasonal_dims), jnp.eye(seasonal_dims)))
     Tskew_Tavg_effects = numpyro.sample("Tskew_Tavg", dist.MultivariateNormal(jnp.zeros(1), 0.1*jnp.eye(1)))
     Tskew_wet_effects = numpyro.sample("Tskew_wet", dist.MultivariateNormal(jnp.zeros(1), jnp.eye(1)))
-    Tskew_pred_effects = numpyro.sample("Tskew_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), pred_effect_scale*jnp.eye(num_predictors)))
+    Tskew_pred_effects = numpyro.sample("Tskew_pred", dist.MultivariateNormal(jnp.zeros(num_predictors), jnp.diag(pred_effect_scale)))
     Tskew_all_effects = jnp.concat([Tskew_seasonal_effects, Tskew_Tavg_effects, Tskew_wet_effects, Tskew_pred_effects], axis=-1)
     ## skew dispersion
     Tskew_scaled_dispersion = numpyro.sample("Tskew_scaled_dispersion", dist.Exponential(1/Tskew_scaled_dispersion_mean))
@@ -187,11 +203,13 @@ def Tair_range_skew(num_predictors:int = 1, pred_effect_scale=1.0, Tskew_scaled_
         Trange_features = jnp.concat([ff_t, jnp.abs(Tavg.reshape((-1,1))), is_wet, predictors], axis=1)
         Tskew_features = jnp.concat([ff_t, Tavg.reshape((-1,1)), is_wet, predictors], axis=1)
         eta_Trange_mean = jnp.sum(Trange_features*Trange_mean_all_effects, axis=1)
+        eta_Trange_shape = jnp.sum(Trange_features*Trange_shape_all_effects, axis=1)
         # parameterize Gamma distribution for range in terms of shape and mean
+        Trange_gamma_shape = jax.nn.softplus(eta_Trange_shape)
         Trange_rate = Trange_gamma_shape / jax.nn.softplus(eta_Trange_mean)
         Trange_mask = jnp.isfinite(Trange_obs) if Trange_obs is not None else True
         with mask(mask=Trange_mask):
-            Trange = numpyro.sample("Trange", dist.Gamma(Trange_gamma_shape, Trange_rate), obs=Trange_obs)
+            Trange = numpyro.sample("Trange", dist.Gamma(jnp.maximum(Trange_gamma_shape, 1e-6), Trange_rate), obs=Trange_obs)
         eta_Tskew = jnp.sum(Tskew_features*Tskew_all_effects, axis=1)
         Tskew_mean = jax.scipy.special.expit(eta_Tskew) # inverse logit
         Tskew_mask = jnp.isfinite(Tskew_obs) if Tskew_obs is not None else True
