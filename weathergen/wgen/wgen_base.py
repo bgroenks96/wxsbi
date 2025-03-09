@@ -169,7 +169,13 @@ class WGEN(ABC):
             return outputs, None
 
     def simulator(
-        self, timestamps=None, predictors=None, initial_state=None, observable=None, rng_seed=0, **prior_kwargs
+        self,
+        timestamps=None,
+        predictors=None,
+        initial_state=None,
+        observable=None,
+        rng_seed=0,
+        **prior_kwargs,
     ):
         """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `observable`.
            The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
