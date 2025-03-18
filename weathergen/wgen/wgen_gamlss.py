@@ -270,11 +270,11 @@ def wgen_glm_v5_precip(
     )
     precip_loc_lag_effects = numpyro.sample(
         "precip_loc_lag",
-        dist.MultivariateNormal(jnp.zeros(2 * order), 0.2 * jnp.eye(2 * order)),
+        dist.MultivariateNormal(jnp.zeros(order), 0.2 * jnp.eye(order)),
     )
     precip_loc_lag_seasonal_interaction_effects = numpyro.sample(
         "precip_loc_lag_seasonal_interaction",
-        dist.MultivariateNormal(jnp.zeros(seasonal_dims * order * 2), 0.2 * jnp.eye(seasonal_dims * order * 2)),
+        dist.MultivariateNormal(jnp.zeros(seasonal_dims * order), 0.2 * jnp.eye(seasonal_dims * order)),
     )
     precip_loc_pred_effects = numpyro.sample(
         "precip_loc_pred",
@@ -345,9 +345,7 @@ def wgen_glm_v5_precip(
         prec_mean_features = jnp.concat(
             [
                 ff_t,
-                prev_dry,
                 log_prec_prev,
-                seasonal_lag_interactions_occ,
                 seasonal_lag_interactions_amounts,
                 Tavg,
                 seasonal_Tavg_interactions,
