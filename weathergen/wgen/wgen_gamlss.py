@@ -81,7 +81,7 @@ class WGEN_GAMLSS(ABC):
         assert num_predictors > 0, "number of predictors must be greater than zero"
 
         # mean air temperature
-        tair_mean_step = wgen_glm_v5_Tair_mean(
+        tair_mean_step = Tavg_model(
             num_predictors,
             pred_effect_scale,
             freqs=Tair_freqs,
@@ -89,9 +89,9 @@ class WGEN_GAMLSS(ABC):
             **kwargs,
         )
         # precipitation
-        precip_step = wgen_glm_v5_precip(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
+        precip_step = precip_model(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
         # air temperature range and skew
-        tair_range_skew_step = wgen_glm_v5_Tair_range_skew(
+        tair_range_skew_step = Trange_skew_model(
             num_predictors,
             pred_effect_scale,
             Tskew_scaled_dispersion_mean,
@@ -125,7 +125,7 @@ class WGEN_GAMLSS(ABC):
         return step
 
 
-def wgen_glm_v5_Tair_mean(
+def Tavg_model(
     num_predictors: int = 1,
     pred_effect_scale=jnp.ones(1),
     freqs=[1 / 365.25, 2 / 365.2],
@@ -217,7 +217,7 @@ def wgen_glm_v5_Tair_mean(
     return step
 
 
-def wgen_glm_v5_precip(
+def precip_model(
     num_predictors: int = 1,
     pred_effect_scale=jnp.ones(1),
     freqs=[1 / 365.25],
@@ -382,7 +382,7 @@ def wgen_glm_v5_precip(
     return step
 
 
-def wgen_glm_v5_Tair_range_skew(
+def Trange_skew_model(
     num_predictors: int = 1,
     pred_effect_scale=1.0,
     Tskew_scaled_dispersion_mean=1.0,

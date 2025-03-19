@@ -7,83 +7,116 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.handlers import mask
 
+from abc import ABC
+
 from .. import utils, data
 from ..distributions import BernoulliGamma, from_moments
-        
 
-def prior(
-    predictors,
-    initial_states,
-    pred_effect_scale=jnp.ones(1),
-    Tavg_dof_mean=None,
-    Tskew_scaled_dispersion_mean=1.0,
-    SR_freqs=[1/365.25],
-    Tair_freqs=[1/365.25],
-    prec_freqs=[1/365.25],
-    **kwargs
-):
-    """Improved WGEN-GLM which generates daily air temperature, precipitation, and incoming solar radiation according to:
-        1) SR(t) | SR(t-1), ..., SR(t-n)
-        2) Tavg(t) | Tavg(t-1), ..., Tavg(t-n), SR(t-1), ..., SR(t-n)
-        3) prec(t) | prec(t-1), ..., prec(t-n), Tavg(t-1), ...,Tavg(t-n), SR(t-1), ..., SR(t-n)
-        4) Trange(t) | prec(t), Tavg(t), SR(t)
-        5) Tskew(t) | prec(t), Tavg(t), SR(t)
-        
-        Mean daily air temperature is modelled as Student-T distribution with variable degrees of freedom.
-        Precipitation is modelled as a bernoulli-Gamma mixture distribution.
-        Daily air temperature range is modelled as a Gamma distribution.
-        Daily air temperature skewness is modeled as a Beta distribution.
-        
-        Each of these observable variables are parameterized as GLMs defined over some set of linear predictors.
 
-    Args:
-        predictors (array): array of exogeneous predictors
-        initial_states (array): array of initial states
-        Tavg_dof_mean (float, optional): if not None, specifies the prior mean of the DoF parameter for a Student-t likelihood. Defaults to None, i.e. Gaussian likelihood.
-        pred_effect_scale (float, optional): standard deviation of the predictor effect prior. Defaults to 1.0.
-        Tskew_scaled_dispersion_mean (float, optional): prior mean of the Tskew dispersion parameter. Defaults to 1.0.
-        Tair_freqs (list, optional): frequencies for air temperature seasonal effects. Defaults to the annual cycle: [1/365.25].
-        prec_freqs (list, optional): frequencies for precipitation seasonal effects. Defaults to the annual cycle: [1/365.25].
-
-    Returns:
-        _type_: _description_
-    """
-    num_predictors = predictors.shape[-1]
-    order = initial_states.shape[-1]
-    assert num_predictors > 0, "number of predictors must be greater than zero"
+class WGEN_GAMLSS_SR(ABC):
     
-    # incoming solar radiation
-    SR_step = SR(num_predictors, pred_effect_scale, freqs=SR_freqs, order=order, **kwargs)
-    # mean air temperature
-    tair_mean_step = Tair_mean(num_predictors, pred_effect_scale, Tavg_dof_mean, freqs=Tair_freqs, order=order, **kwargs)        
-    # precipitation
-    precip_step = precip(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
-    # air temperature range and skew
-    tair_range_skew_step = Tair_range_skew(num_predictors, pred_effect_scale, Tskew_scaled_dispersion_mean, freqs=Tair_freqs, order=order, **kwargs)
+    def get_obs(self, data: pd.DataFrame):
+        prec_obs = data["prec"]
+        SR = data["SR"]
+        Tavg_obs = data["Tair_mean"]
+        Trange_obs = data["Tair_max"] - data["Tair_min"]
+        Tskew_obs = (Tavg_obs - data["Tair_min"]) / Trange_obs
+        return {
+            'prec': jnp.array(prec_obs.values).reshape((1,-1)),
+            'SR': jnp.array(SR.values).reshape((1,-1)),
+            'Tavg': jnp.array(Tavg_obs.values).reshape((1,-1)),
+            'Trange': jnp.array(Trange_obs.values).reshape((1,-1)),
+            'Tskew': jnp.array(Tskew_obs.values).reshape((1,-1)),
+        }
     
-    def step(state, inputs, obs={'prec': None, 'Tavg': None, 'Trange': None, 'Tskew': None, 'SR': None}):
-        assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
-        assert state.shape[2] == order, f"state lag dimension does not match order={order}"
-        # unpack state and input tensors;
-        # state is assumed to have shape (batch, vars, lag)
-        SR_prev = state[:,0,:]
-        prec_prev = state[:,1,:]
-        Tavg_prev = state[:,2,:]
-        i, year, month, doy = inputs[:,:4].T
-        predictors = inputs[:,4:]
+    def get_initial_states(self, obs_or_shape: dict | tuple[int,int], order=1, dropna=True):
+        if isinstance(obs_or_shape, tuple):
+            # default to batch_size = 1 and one time step
+            return jnp.zeros((*obs_or_shape,order,2))
+        # initialize from observations
+        obs = obs_or_shape
+        SR_state = jnp.expand_dims(obs['SR'], axis=[-1,-2])
+        prec_state = jnp.expand_dims(obs['prec'], axis=[-1,-2])
+        Tavg_state = jnp.expand_dims(obs['Tavg'], axis=[-1,-2])
+        state = jnp.concat([SR_state, prec_state, Tavg_state], axis=-2)    
+        # concatenate lagged states
+        timelen = state.shape[1]
+        return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-1)
+    
+    def prior(
+        self,
+        predictors,
+        initial_states,
+        pred_effect_scale=jnp.ones(1),
+        Tavg_dof_mean=None,
+        Tskew_scaled_dispersion_mean=1.0,
+        SR_freqs=[1/365.25],
+        Tair_freqs=[1/365.25],
+        prec_freqs=[1/365.25],
+        **kwargs
+    ):
+        """Improved WGEN-GLM which generates daily air temperature, precipitation, and incoming solar radiation according to:
+            1) SR(t) | SR(t-1), ..., SR(t-n)
+            2) Tavg(t) | Tavg(t-1), ..., Tavg(t-n), SR(t-1), ..., SR(t-n)
+            3) prec(t) | prec(t-1), ..., prec(t-n), Tavg(t-1), ...,Tavg(t-n), SR(t-1), ..., SR(t-n)
+            4) Trange(t) | prec(t), Tavg(t), SR(t)
+            5) Tskew(t) | prec(t), Tavg(t), SR(t)
+            
+            Mean daily air temperature is modelled as Student-T distribution with variable degrees of freedom.
+            Precipitation is modelled as a bernoulli-Gamma mixture distribution.
+            Daily air temperature range is modelled as a Gamma distribution.
+            Daily air temperature skewness is modeled as a Beta distribution.
+            
+            Each of these observable variables are parameterized as GLMs defined over some set of linear predictors.
+
+        Args:
+            predictors (array): array of exogeneous predictors
+            initial_states (array): array of initial states
+            Tavg_dof_mean (float, optional): if not None, specifies the prior mean of the DoF parameter for a Student-t likelihood. Defaults to None, i.e. Gaussian likelihood.
+            pred_effect_scale (float, optional): standard deviation of the predictor effect prior. Defaults to 1.0.
+            Tskew_scaled_dispersion_mean (float, optional): prior mean of the Tskew dispersion parameter. Defaults to 1.0.
+            Tair_freqs (list, optional): frequencies for air temperature seasonal effects. Defaults to the annual cycle: [1/365.25].
+            prec_freqs (list, optional): frequencies for precipitation seasonal effects. Defaults to the annual cycle: [1/365.25].
+
+        Returns:
+            _type_: _description_
+        """
+        num_predictors = predictors.shape[-1]
+        order = initial_states.shape[-1]
+        assert num_predictors > 0, "number of predictors must be greater than zero"
+        
         # incoming solar radiation
-        SR = SR_step(SR_prev, inputs, obs['SR'])
-        # mean daily air temperature
-        Tavg, Tavg_mean, Tavg_mean_seasonal = tair_mean_step((Tavg_prev, SR_prev, SR), inputs, obs['Tavg'])
-        Tavg_anom = (Tavg - Tavg_mean_seasonal).reshape((-1,1))
+        SR_step = SR(num_predictors, pred_effect_scale, freqs=SR_freqs, order=order, **kwargs)
+        # mean air temperature
+        tair_mean_step = Tair_mean(num_predictors, pred_effect_scale, Tavg_dof_mean, freqs=Tair_freqs, order=order, **kwargs)        
         # precipitation
-        prec = precip_step((prec_prev, Tavg_anom, SR), inputs, obs['prec'])
+        precip_step = precip(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
         # air temperature range and skew
-        Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec, SR), inputs, obs['Trange'], obs['Tskew'])
-        newstate = jnp.expand_dims(jnp.stack([SR, prec, Tavg]).T, axis=-1)
-        return jnp.concat([state[:,:,1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax, SR)
-    
-    return step
+        tair_range_skew_step = Tair_range_skew(num_predictors, pred_effect_scale, Tskew_scaled_dispersion_mean, freqs=Tair_freqs, order=order, **kwargs)
+        
+        def step(state, inputs, obs={'prec': None, 'Tavg': None, 'Trange': None, 'Tskew': None, 'SR': None}):
+            assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
+            assert state.shape[2] == order, f"state lag dimension does not match order={order}"
+            # unpack state and input tensors;
+            # state is assumed to have shape (batch, vars, lag)
+            SR_prev = state[:,0,:]
+            prec_prev = state[:,1,:]
+            Tavg_prev = state[:,2,:]
+            i, year, month, doy = inputs[:,:4].T
+            predictors = inputs[:,4:]
+            # incoming solar radiation
+            SR = SR_step(SR_prev, inputs, obs['SR'])
+            # mean daily air temperature
+            Tavg, Tavg_mean, Tavg_mean_seasonal = tair_mean_step((Tavg_prev, SR_prev, SR), inputs, obs['Tavg'])
+            Tavg_anom = (Tavg - Tavg_mean_seasonal).reshape((-1,1))
+            # precipitation
+            prec = precip_step((prec_prev, Tavg_anom, SR), inputs, obs['prec'])
+            # air temperature range and skew
+            Trange, Tskew, Tmin, Tmax = tair_range_skew_step((Tavg, prec, SR), inputs, obs['Trange'], obs['Tskew'])
+            newstate = jnp.expand_dims(jnp.stack([SR, prec, Tavg]).T, axis=-1)
+            return jnp.concat([state[:,:,1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax, SR)
+        
+        return step
 
 def SR(
     num_predictors: int=1,
@@ -315,31 +348,3 @@ def Tair_range_skew(
         return Trange, Tskew, Tmin, Tmax
         
     return step
-
-def get_obs(data: pd.DataFrame):
-    prec_obs = data["prec"]
-    SR = data["SR"]
-    Tavg_obs = data["Tair_mean"]
-    Trange_obs = data["Tair_max"] - data["Tair_min"]
-    Tskew_obs = (Tavg_obs - data["Tair_min"]) / Trange_obs
-    return {
-        'prec': jnp.array(prec_obs.values).reshape((1,-1)),
-        'SR': jnp.array(SR.values).reshape((1,-1)),
-        'Tavg': jnp.array(Tavg_obs.values).reshape((1,-1)),
-        'Trange': jnp.array(Trange_obs.values).reshape((1,-1)),
-        'Tskew': jnp.array(Tskew_obs.values).reshape((1,-1)),
-    }
-    
-def get_initial_states(obs_or_shape: dict | tuple[int,int], order=1, dropna=True):
-    if isinstance(obs_or_shape, tuple):
-        # default to batch_size = 1 and one time step
-        return jnp.zeros((*obs_or_shape,order,2))
-    # initialize from observations
-    obs = obs_or_shape
-    SR_state = jnp.expand_dims(obs['SR'], axis=[-1,-2])
-    prec_state = jnp.expand_dims(obs['prec'], axis=[-1,-2])
-    Tavg_state = jnp.expand_dims(obs['Tavg'], axis=[-1,-2])
-    state = jnp.concat([SR_state, prec_state, Tavg_state], axis=-2)    
-    # concatenate lagged states
-    timelen = state.shape[1]
-    return jnp.concat([state[:,i:timelen-order+i,:,:] for i in range(order)], axis=-1)
