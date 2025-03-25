@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 import unittest
 
-from numpyro.handlers import trace, seed
-
 import weathergen as wx
 
+from numpyro.handlers import trace, seed
 
 def make_test_data():
     time_axis = pd.DatetimeIndex(pd.date_range("2000", "2001"))
