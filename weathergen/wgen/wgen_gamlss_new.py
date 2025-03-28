@@ -318,7 +318,7 @@ def Trange_skew_model(
     pred_effect_scale=1.0,
     freqs=[1 / 365.25, 2 / 365.25],
     order=1,
-    Trange_max=22.0,
+    Trange_max_default=22.0,
     **kwargs,
 ):
     # Trange mean
@@ -382,7 +382,10 @@ def Trange_skew_model(
     def step(state, inputs, Trange_obs=None, Tskew_obs=None):
 
         Trange_obs_scaled = Trange_obs
+        Trange_max = Trange_max_default
         if Trange_obs is not None:
+            # Choose max scale factor as the maximum of default and observed values
+            Trange_max = jnp.maximum(Trange_max, jnp.max(Trange_obs))
             # Rescale to [0, 1]
             Trange_obs_scaled = Trange_obs / Trange_max
 
@@ -391,19 +394,22 @@ def Trange_skew_model(
         t, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
         
+        is_dry = 1 - jnp.sign(prec)
         lag_preds = jnp.log(Trange_prev_scaled)
 
         # Trange
+        ## parameterize alpha and beta with mean and dispersion;
+        ## we use the inverse of the modeled variable so that larger effects imply a larger dispersion.
         Trange_mean, _ = Trange_mean_glm(t, lag_preds, predictors, (lag_preds, t))
-        Trange_disp, _ = Trange_disp_glm(t, lag_preds, predictors, (lag_preds, t))
-        Trange_alpha = Trange_mean*Trange_disp
-        Trange_beta = (1-Trange_mean)*Trange_disp
+        Trange_disp_inv, _ = Trange_disp_glm(t, lag_preds, predictors, (lag_preds, t))
+        Trange_alpha = Trange_mean * 10/Trange_disp_inv
+        Trange_beta = (1-Trange_mean) * 10/Trange_disp_inv
         
         # Tskew
         Tskew_mean, _ = Tskew_mean_glm(t, Tavg, predictors)
-        Tskew_disp, _ = Tskew_disp_glm(t, Tavg, predictors)
-        Tskew_alpha = Tskew_mean*Tskew_disp
-        Tskew_beta = (1-Tskew_mean)*Tskew_disp
+        Tskew_disp_inv, _ = Tskew_disp_glm(t, Tavg, predictors)
+        Tskew_alpha = Tskew_mean * 10/Tskew_disp_inv
+        Tskew_beta = (1-Tskew_mean) * 10/Tskew_disp_inv
 
         # Sample
         Trange_mask = jnp.isfinite(Trange_obs) if Trange_obs is not None else True
