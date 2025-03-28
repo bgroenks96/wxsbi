@@ -46,7 +46,6 @@ class WGEN_GAMLSS_v2(ABC):
         predictors,
         initial_states,
         pred_effect_scale=jnp.ones(1),
-        Tskew_scaled_dispersion_mean=1.0,
         Tair_freqs=[1 / 365.25],
         prec_freqs=[1 / 365.25],
         **kwargs,
@@ -93,7 +92,6 @@ class WGEN_GAMLSS_v2(ABC):
         tair_range_skew_step = Trange_skew_model(
             num_predictors,
             pred_effect_scale,
-            Tskew_scaled_dispersion_mean,
             freqs=Tair_freqs,
             order=order,
             **kwargs,
@@ -169,9 +167,10 @@ def Tavg_model(
         t, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
 
+        Tavg_loc, _ = Tavg_loc_glm(Tavg_prev, t, (Tavg_prev, t), predictors)
         Tavg_loc = numpyro.deterministic(
             "Tavg_loc",
-            Tavg_loc_glm(Tavg_prev, t, (Tavg_prev, t), predictors),
+            Tavg_loc,
         )
         
         if Tavg_lag_in_scale:
@@ -192,7 +191,7 @@ def Tavg_model(
 
         Tavg_sample_seasonal_anomaly = numpyro.deterministic(
             "Tavg_sample_seasonal_anomaly",
-            Tavg - jnp.sum(Tavg_loc_seasonal_effects.get_coef() * Tavg_loc_seasonal_effects.get_predictors(t), axis=1)
+            Tavg - jnp.sum(Tavg_loc_seasonal_effects.get_coefs() * Tavg_loc_seasonal_effects.get_predictors(t), axis=1)
         )
         return Tavg  # , Tavg_loc, Tavg_sample_seasonal_anomaly
 
@@ -323,7 +322,7 @@ def Trange_skew_model(
     **kwargs,
 ):
     # Trange mean
-    Trange_mean_seasonal_effects = glm.SeasaonalEffects("Trange_mean_seasonal", freqs)
+    Trange_mean_seasonal_effects = glm.SeasonalEffects("Trange_mean_seasonal", freqs)
     Trange_mean_lag_effects = glm.LinearEffects("Trange_mean_lag", order, scale_or_cov=0.1)
     Trange_mean_pred_effects = glm.LinearEffects("Trange_mean_pred", num_predictors, scale_or_cov=pred_effect_scale)
     Trange_mean_seasonal_lag_interaction_effects = glm.InteractionEffects(
@@ -341,7 +340,7 @@ def Trange_skew_model(
     )
     
     # Trange dispersion
-    Trange_disp_seasonal_effects = glm.SeasaonalEffects("Trange_disp_seasonal", freqs)
+    Trange_disp_seasonal_effects = glm.SeasonalEffects("Trange_disp_seasonal", freqs)
     Trange_disp_lag_effects = glm.LinearEffects("Trange_disp_lag", order, scale_or_cov=0.1)
     Trange_disp_pred_effects = glm.LinearEffects("Trange_disp_pred", num_predictors, scale_or_cov=pred_effect_scale)
     Trange_disp_seasonal_lag_interaction_effects = glm.InteractionEffects(

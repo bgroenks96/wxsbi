@@ -75,7 +75,8 @@ class SeasonalEffects(AbstractEffects):
         super().__init__(name, coef)
     
     def get_predictors(self, t):
-        ff_t = utils.fourier_feats(t[:,0], self.freqs, intercept=False) * jnp.ones((t.shape[0], 1))
+        assert len(t.shape) == 1, "input argument 't' must be a 1D vector"
+        ff_t = utils.fourier_feats(t, self.freqs, intercept=False) * jnp.ones((t.shape[0], 1))
         return ff_t
     
 class InteractionEffects(AbstractEffects):
