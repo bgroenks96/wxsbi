@@ -11,7 +11,6 @@ from . import utils
 
 class AbstractEffects(ABC):
     def __init__(self, name: str, coef):
-        assert len(coef.shape) == 1, "coefficients must be a vector!"
         self.name = name
         self.coef = coef
     
@@ -168,8 +167,8 @@ class GLM(ABC):
             _type_: a tuple `(y, z)` where `y` is the linked predictand and `z` is the linear predictand.
         """
         assert len(xs) == len(self.effects), "Number of input arguments must match the number of effects."
-        preds = jnp.concat([e.get_predictors(x) for e,x in zip(self.effects, xs)], axis=1)
-        coefs = jnp.concat([e.get_coefs() for e in self.effects], axis=0)
-        z = jnp.sum(preds*coefs, axis=1)
+        preds = jnp.concat([e.get_predictors(x) for e,x in zip(self.effects, xs)], axis=-1)
+        coefs = jnp.concat([e.get_coefs() for e in self.effects], axis=-1)
+        z = jnp.sum(preds*coefs, axis=-1)
         return self.link.invlink(z), z
     
