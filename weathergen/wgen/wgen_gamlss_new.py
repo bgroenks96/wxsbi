@@ -240,7 +240,7 @@ def precip_model(
         precip_loc_Tavg_effects,
         precip_loc_seasonal_effects,
     )
-    precip_loc_lag_effects = glm.LinearEffects("precip_loc_lag", 2*order, scale_or_cov=0.2)
+    precip_loc_lag_effects = glm.LinearEffects("precip_loc_lag", order, scale_or_cov=0.2)
     precip_loc_lag_seasonal_interaction_effects = glm.InteractionEffects(
         "precip_loc_lag_seasonal_interaction",
         precip_loc_lag_effects,
@@ -290,7 +290,7 @@ def precip_model(
         # Parameters
         p_wet, _ = precip_occ_glm(t, lag_preds, (lag_preds, t), Tavg, (Tavg, t), predictors)
         p_wet = numpyro.deterministic("p_wet", p_wet)
-        precip_gamma_loc, _ = precip_loc_glm(t, Tavg, (Tavg, t), lag_preds, (lag_preds, t), predictors)
+        precip_gamma_loc, _ = precip_loc_glm(t, Tavg, (Tavg, t), prev_log_prec, (prev_log_prec, t), predictors)
         precip_gamma_loc = numpyro.deterministic("precip_gamma_loc", precip_gamma_loc)
         precip_gamma_shape, _ = precip_shape_glm(t, predictors)
         precip_gamma_shape = numpyro.deterministic("precip_gamma_shape", precip_gamma_shape)
