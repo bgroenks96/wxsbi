@@ -4,7 +4,6 @@ from .distributions import BernoulliGamma, StochasticFunctionDistribution
 from .wgen import (
     WGEN,
     WGEN_GAMLSS,
-    WGEN_GAMLSS_v2,
     wgen_gamlss_SR,
     estimate_wgen_params,
 )
