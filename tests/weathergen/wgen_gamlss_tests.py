@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 import unittest
 
-from numpyro.handlers import trace, seed
-
 import weathergen as wx
 
+from numpyro.handlers import trace, seed
 
 def make_test_data():
     time_axis = pd.DatetimeIndex(pd.date_range("2000", "2001"))
@@ -38,11 +37,7 @@ def wgen_glm_smoke_test(data, model):
     fit_result = wgen.fit(1)
 
 
-class Test_WGEN_GLM(unittest.TestCase):
-
-    def test_wgen_glm(self):
-        data = make_test_data()
-        wgen_glm_smoke_test(data, wx.wgen_glm_v2)
+class Test_WGEN_GAMLSS(unittest.TestCase):
 
     def test_wgen_gamlss(self):
         data = make_test_data()

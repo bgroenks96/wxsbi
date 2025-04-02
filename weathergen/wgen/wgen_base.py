@@ -1,5 +1,3 @@
-from abc import ABC
-
 import pandas as pd
 import h5py as h5
 import logging
@@ -13,10 +11,12 @@ from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
 from numpyro.contrib.control_flow import scan
 
+from abc import ABC
+from typing import List, Tuple
+
 from .wgen_gamlss import WGEN_GAMLSS
 from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars
-
 
 class WGEN(ABC):
 
@@ -28,6 +28,14 @@ class WGEN(ABC):
         order=1,
         **kwargs,
     ):
+        """Initializes the WGEN model with the given observation dataset and model 
+
+        Args:
+            data (pd.DataFrame): _description_
+            model (_type_, optional): _description_. Defaults to WGEN_GAMLSS().
+            predictors (list, optional): _description_. Defaults to [].
+            order (int, optional): _description_. Defaults to 1.
+        """
         super().__init__()
         self.model = model
         self.model_kwargs = kwargs
