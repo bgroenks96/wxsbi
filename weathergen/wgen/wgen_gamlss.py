@@ -384,9 +384,7 @@ def Trange_skew_model(
         Trange_obs_scaled = Trange_obs
         Trange_max = Trange_max_default
         if Trange_obs is not None:
-            # Choose max scale factor as the maximum of default and observed values
-            Trange_max = jnp.maximum(Trange_max, jnp.max(Trange_obs))
-            # Rescale to [0, 1]
+            # Rescale observations to [0, 1]
             Trange_obs_scaled = Trange_obs / Trange_max
 
         Tavg, prec, Trange_prev = state
@@ -430,7 +428,7 @@ def Trange_skew_model(
             )
 
         # calculate min and max from range and skew
-        Tmin = numpyro.deterministic("Tmin", Tavg - Tskew * Trange)
+        Tmin = numpyro.deterministic("Tmin", Tavg.squeeze() - Tskew * Trange)
         Tmax = numpyro.deterministic("Tmax", Tmin + Trange)
         return Trange, Tskew, Tmin, Tmax
 
