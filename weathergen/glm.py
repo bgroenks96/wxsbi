@@ -47,7 +47,7 @@ class LinearEffects(AbstractEffects):
         super().__init__(name, coef)
     
     def get_predictors(self, x):
-        assert x.shape[1] == len(self)
+        assert x.shape[-1] == self.coef.shape[-1]
         return x
     
 class SeasonalEffects(AbstractEffects):
@@ -74,7 +74,6 @@ class SeasonalEffects(AbstractEffects):
         super().__init__(name, coef)
     
     def get_predictors(self, t):
-        assert len(t.shape) == 1, "input argument 't' must be a 1D vector"
         ff_t = utils.fourier_feats(t, self.freqs, intercept=False) * jnp.ones((t.shape[0], 1))
         return ff_t
     
@@ -106,10 +105,9 @@ class InteractionEffects(AbstractEffects):
         assert isinstance(xy, Tuple) and len(xy) == 2, "input to get_predictors for interaction effect must be a tuple of length 2"
         x, y = xy
         # outer product between predictors with batch dimension
-        xy = jnp.einsum(
-            "ij,ik->ijk",
-            self.e1.get_predictors(x),
-            self.e2.get_predictors(y)
+        xy = jnp.matmul(
+            jnp.expand_dims(self.e1.get_predictors(x), axis=-1),
+            jnp.expand_dims(self.e2.get_predictors(y), axis=-2),
         )
         # flatten both feature dimensions into one
         return xy.reshape((xy.shape[0], -1))
