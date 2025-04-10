@@ -1,15 +1,14 @@
-import pandas as pd
-
 from abc import ABC
 
 import jax
 import jax.numpy as jnp
-
 import numpyro
 import numpyro.distributions as dist
+import pandas as pd
 from numpyro.handlers import mask
 
 from .. import glm, utils
+
 
 class WGEN_GAMLSS(ABC):
 
@@ -146,7 +145,9 @@ def Tavg_model(
 
     ## Scale
     Tavg_scale_seasonal_effects = glm.SeasonalEffects("Tavg_loc_scale_seasonal", freqs)
-    Tavg_scale_pred_effects = glm.LinearEffects("Tavg_loc_scale_pred", num_predictors, scale_or_cov=jnp.diag(pred_effect_scale))
+    Tavg_scale_pred_effects = glm.LinearEffects(
+        "Tavg_loc_scale_pred", num_predictors, scale_or_cov=jnp.diag(pred_effect_scale)
+    )
     if Tavg_lag_in_scale:
         Tavg_scale_lag_effects = glm.LinearEffects("Tavg_scale_lag", order, scale_or_cov=0.2)
         Tavg_scale_glm = glm.GLM(
@@ -172,7 +173,7 @@ def Tavg_model(
             "Tavg_loc",
             Tavg_loc,
         )
-        
+
         if Tavg_lag_in_scale:
             Tavg_scale = numpyro.deterministic(
                 "Tavg_scale",
@@ -191,7 +192,7 @@ def Tavg_model(
 
         Tavg_sample_seasonal_anomaly = numpyro.deterministic(
             "Tavg_sample_seasonal_anomaly",
-            Tavg - jnp.sum(Tavg_loc_seasonal_effects.get_coefs() * Tavg_loc_seasonal_effects.get_predictors(t), axis=1)
+            Tavg - jnp.sum(Tavg_loc_seasonal_effects.get_coefs() * Tavg_loc_seasonal_effects.get_predictors(t), axis=1),
         )
         return Tavg  # , Tavg_loc, Tavg_sample_seasonal_anomaly
 
@@ -207,7 +208,7 @@ def precip_model(
 ):
     # Occurrence
     precip_occ_seasonal_effects = glm.SeasonalEffects("precip_occ_seasonal", freqs)
-    precip_occ_lag_effects = glm.LinearEffects("precip_occ_lag", 2*order, scale_or_cov=0.2)
+    precip_occ_lag_effects = glm.LinearEffects("precip_occ_lag", 2 * order, scale_or_cov=0.2)
     precip_occ_lag_seasonal_interaction_effects = glm.InteractionEffects(
         "precip_occ_lag_seasonal_interaction",
         precip_occ_lag_effects,
@@ -257,7 +258,7 @@ def precip_model(
         precip_loc_pred_effects,
         link=glm.LogLink(),
     )
-    
+
     # Amounts shape
     precip_shape_seasonal_effects = glm.SeasonalEffects("precip_shape_seasonal", freqs)
     precip_shape_pred_effects = glm.LinearEffects("precip_shape_pred", num_predictors)
@@ -272,7 +273,7 @@ def precip_model(
         t, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
 
-        Tavg = jnp.sign(Tavg) * jnp.log(jnp.square(Tavg)) / 2
+        Tavg = jnp.sign(Tavg) * jnp.log(1 + jnp.square(Tavg)) / 2
 
         prev_dry = 1 - jnp.sign(prec_prev)
         prev_log_prec = jnp.log(1 + prec_prev)
@@ -331,14 +332,23 @@ def Trange_skew_model(
         Trange_mean_seasonal_effects,
         scale_or_cov=0.2,
     )
+    Trange_mean_Tavg_effects = glm.LinearEffects("Trange_mean_Tavg", 1, scale_or_cov=0.1)
+    Trange_mean_seasonal_Tavg_interaction_effects = glm.InteractionEffects(
+        "Trange_mean_Tavg_seasonal_interaction",
+        Trange_mean_Tavg_effects,
+        Trange_mean_seasonal_effects,
+        scale_or_cov=0.2,
+    )
     Trange_mean_glm = glm.GLM(
         Trange_mean_seasonal_effects,
         Trange_mean_lag_effects,
         Trange_mean_pred_effects,
         Trange_mean_seasonal_lag_interaction_effects,
+        Trange_mean_Tavg_effects,
+        Trange_mean_seasonal_Tavg_interaction_effects,
         link=glm.LogitLink(),
     )
-    
+
     # Trange dispersion
     Trange_disp_seasonal_effects = glm.SeasonalEffects("Trange_disp_seasonal", freqs)
     Trange_disp_lag_effects = glm.LinearEffects("Trange_disp_lag", order, scale_or_cov=0.1)
@@ -360,14 +370,21 @@ def Trange_skew_model(
     # Tskew mean
     Tskew_mean_seasonal_effects = glm.SeasonalEffects("Tskew_mean_seasonal", freqs)
     Tskew_mean_Tavg_effects = glm.LinearEffects("Tskew_mean_Tavg", 1, scale_or_cov=0.1)
+    Tskew_mean_seasonal_Tavg_interaction_effects = glm.InteractionEffects(
+        "Tskew_mean_Tavg_seasonal_interaction",
+        Tskew_mean_Tavg_effects,
+        Tskew_mean_seasonal_effects,
+        scale_or_cov=0.2,
+    )
     Tskew_mean_pred_effects = glm.LinearEffects("Tskew_mean_pred", num_predictors, scale_or_cov=pred_effect_scale)
     Tskew_mean_glm = glm.GLM(
         Tskew_mean_seasonal_effects,
         Tskew_mean_Tavg_effects,
         Tskew_mean_pred_effects,
+        Tskew_mean_seasonal_Tavg_interaction_effects,
         link=glm.LogitLink(),
     )
-    
+
     # Tskew diepersion
     Tskew_disp_seasonal_effects = glm.SeasonalEffects("Tskew_disp_seasonal", freqs)
     Tskew_disp_Tavg_effects = glm.LinearEffects("Tskew_disp_Tavg", 1, scale_or_cov=0.1)
@@ -391,23 +408,31 @@ def Trange_skew_model(
         Trange_prev_scaled = Trange_prev / Trange_max
         t, year, month, doy = inputs[:, :4].T
         predictors = inputs[:, 4:]
-        
+
         is_dry = 1 - jnp.sign(prec)
-        lag_preds = jnp.log(Trange_prev_scaled)
+        lag_preds = jax.scipy.special.logit(Trange_prev_scaled)
+        Tavg_scaled = jnp.sign(Tavg) * jnp.log(1 + jnp.square(Tavg)) / 2
 
         # Trange
         ## parameterize alpha and beta with mean and dispersion;
         ## we use the inverse of the modeled variable so that larger effects imply a larger dispersion.
-        Trange_mean, _ = Trange_mean_glm(t, lag_preds, predictors, (lag_preds, t))
+        Trange_mean, _ = Trange_mean_glm(
+            t,
+            lag_preds,
+            predictors,
+            (lag_preds, t),
+            Tavg_scaled,
+            (Tavg_scaled, t),
+        )
         Trange_disp_inv, _ = Trange_disp_glm(t, lag_preds, predictors, (lag_preds, t))
-        Trange_alpha = Trange_mean * 10/Trange_disp_inv
-        Trange_beta = (1-Trange_mean) * 10/Trange_disp_inv
-        
+        Trange_alpha = Trange_mean * 10 / Trange_disp_inv
+        Trange_beta = (1 - Trange_mean) * 10 / Trange_disp_inv
+
         # Tskew
-        Tskew_mean, _ = Tskew_mean_glm(t, Tavg, predictors)
-        Tskew_disp_inv, _ = Tskew_disp_glm(t, Tavg, predictors)
-        Tskew_alpha = Tskew_mean * 10/Tskew_disp_inv
-        Tskew_beta = (1-Tskew_mean) * 10/Tskew_disp_inv
+        Tskew_mean, _ = Tskew_mean_glm(t, Tavg_scaled, predictors, (Tavg_scaled, t))
+        Tskew_disp_inv, _ = Tskew_disp_glm(t, Tavg_scaled, predictors)
+        Tskew_alpha = Tskew_mean * 10 / Tskew_disp_inv
+        Tskew_beta = (1 - Tskew_mean) * 10 / Tskew_disp_inv
 
         # Sample
         Trange_mask = jnp.isfinite(Trange_obs) if Trange_obs is not None else True
