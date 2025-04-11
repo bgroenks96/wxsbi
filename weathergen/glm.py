@@ -15,7 +15,7 @@ class AbstractEffects(ABC):
         self.coef = coef
 
     def __len__(self):
-        return len(self.coef)
+        return self.coef.shape[-1]
 
     def get_coefs(self):
         return self.coef
