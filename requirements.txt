@@ -7,4 +7,4 @@ numpyro
 jax2torch
 torch
 zuko
-sbi>=0.21.0
+sbi>=0.23.0
