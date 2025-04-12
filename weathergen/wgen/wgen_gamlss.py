@@ -38,6 +38,8 @@ class WGEN_GAMLSS(ABC):
             "Tavg": jnp.array(Tavg_obs.values).reshape((1, -1)),
             "Trange": jnp.array(Trange_obs.values).reshape((1, -1)),
             "Tskew": jnp.array(Tskew_obs.values).reshape((1, -1)),
+            "Tmax": jnp.array(data["Tair_max"].values).reshape((1, -1)),
+            "Tmin": jnp.array(data["Tair_min"].values).reshape((1, -1)),
         }
 
     def prior(
