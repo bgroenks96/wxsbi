@@ -1,7 +1,15 @@
 import jax
 
+import numpyro.distributions as dist
+
 from functools import partial
 from jax2torch.jax2torch import jax2torch, j2t, t2j
+
+def check_if_list_in_string(l, x):
+    for elem in l:
+        if elem in x:
+            return True
+    return False
 
 class NumPyro2TorchDistribution:
     def __init__(self, numpyro_dist, rng_key=jax.random.PRNGKey(0)):
@@ -23,3 +31,13 @@ class NumPyro2TorchDistribution:
     def _log_prob(self, x):
         return self.dist.log_prob(x)
     
+class Torch2NumPyroDistribution(dist.Distribution):
+    def __init__(self, torch_dist):
+        self.dist = torch_dist
+        super().__init__(self)
+    
+    def sample(self, shape):
+        return t2j(self.dist.sample(shape))
+    
+    def log_prob(self, x):
+        return t2j(self.dist.log_prob(j2t(x)))
