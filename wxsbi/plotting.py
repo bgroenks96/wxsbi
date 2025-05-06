@@ -1,12 +1,13 @@
 import matplotlib.pyplot as plt
 
-from .wgen_sbi import SBIResults
+from .wxsbi import SBIResults
 
 def plot_target_densitites_sbi(results: SBIResults, cmap="Dark2"):
-    obs_target = results.obs_target
-    fig, axs = plt.subplots(1, obs_target.shape[0], figsize = (obs_target.shape[0]*5, 5))
+    summary_target = results.summary_target
+    summary_names = results.simulator.summarizer.names
+    fig, axs = plt.subplots(1, summary_target.shape[0], figsize = (summary_target.shape[0]*5, 5))
     cmap = plt.cm.get_cmap(cmap).colors
-    for i in range(obs_target.shape[0]):
+    for i in range(summary_target.shape[0]):
         handles = []
         if "calibration_posterior" in results.simulations:
             _, _, h1 = axs[i].hist(results.simulations["calibration_posterior"][:, i], color=cmap[0], bins=20, density=True, alpha=0.5)
@@ -23,7 +24,8 @@ def plot_target_densitites_sbi(results: SBIResults, cmap="Dark2"):
         if "sbi_posterior_map" in results.simulations:
             _, _, h5 = axs[i].hist(results.simulations["sbi_posterior_map"][:, i], color=cmap[3], bins=30, density=True, alpha=0.5)
             handles.append(h5)
-        target_line = axs[i].axvline(obs_target[i].flatten(), color= "black", label="Target")
+        axs[i].set_title(summary_names[i])
+        target_line = axs[i].axvline(summary_target[i].flatten(), color= "black", label="Target")
         handles.append(target_line)
     labels = ["Calibration", "Calibration (mean)", "SBI Prior", "SBI posterior", "SBI posterior (MAP)"]
     fig.legend(handles=handles, labels=labels, loc="lower center", bbox_to_anchor=(0.5, -0.1), ncol=6)

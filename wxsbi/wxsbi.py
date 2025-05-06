@@ -4,31 +4,37 @@ import jax.numpy as jnp
 import torch
 import torch.distributions as torchdist
 
-import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import Predictive
+from numpyro.infer.autoguide import AutoMultivariateNormal
 
 import logging
 logger = logging.getLogger(__name__)
 
 from abc import ABC
-
-from weathergen import WGEN
-
-from jax2torch.jax2torch import jax2torch, j2t, t2j
-
+from jax2torch.jax2torch import j2t, t2j
 from sbi.inference import SNPE
 from sbi.utils.user_input_checks import process_prior
-
 from tqdm import tqdm
 
+from weathergen.distributions import StochasticFunctionDistribution
+from weathergen.types import AbstractTimeSeriesModel
+
+from typing import Union
+
+from .summarizers import Summarizer
 from .utils import *
 
-class Simulator(ABC):
-    def __init__(self, sim_func, prior=None, rng_seed=1234):
+
+class BatchSimulator(ABC):
+    """Wrapper type for simulator functions that allows for batched evaluation.
+    """
+    
+    def __init__(self, sim_func, summarizer, prior, default_prng=jax.random.PRNGKey(0)):
         self.sim_func = sim_func
+        self.summarizer = summarizer
         self.prior = prior
-        self.default_prng = jax.random.PRNGKey(rng_seed)
+        self.default_prng = default_prng
         super().__init__()
         
     def __call__(self, theta, batch_size=None, prng=None):    
@@ -51,11 +57,11 @@ class Simulator(ABC):
 class SBIResults:
     def __init__(
         self,
-        simulator,
+        simulator: BatchSimulator,
         sbi_prior,
         sbi_posterior,
         calibration_posterior,
-        obs_target,
+        summary_target,
         samples: dict,
         simulations: dict,
     ):
@@ -63,16 +69,16 @@ class SBIResults:
         self.sbi_prior = sbi_prior
         self.sbi_posterior = sbi_posterior
         self.calibration_posterior = calibration_posterior
-        self.obs_target = obs_target
+        self.summary_target = summary_target
         self.samples = samples
         self.simulations = simulations
     
-    def with_target(self, obs_target, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
-        """Resamples from the SBI posterior for an alternative choice of `obs_target` and returns a
+    def with_target(self, summary_target, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
+        """Resamples from the SBI posterior for an alternative choice of `summary_target` and returns a
         new `SBIResults` object with the updated posterior samples and simulations.
 
         Args:
-            obs_target (_type_): new observable target to use
+            summary_target (_type_): new target to use
             simulation_batch_size (_type_, optional): batch size for simulations. Defaults to None.
             rng_seed (int, optional): random seed. Defaults to 1234.
             map_kwargs (_type_, optional): keyword arguments for MAP estimation. Defaults to dict().
@@ -83,9 +89,9 @@ class SBIResults:
         num_samples = self.samples["sbi_posterior"].shape[0]
         simulation_batch_size = num_samples if simulation_batch_size is None else simulation_batch_size
         (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
-            simulator,
+            self.simulator,
             self.sbi_posterior,
-            obs_target,
+            summary_target,
             num_samples,
             simulation_batch_size,
             rng_seed,
@@ -97,37 +103,33 @@ class SBIResults:
         simulations["sbi_posterior"] = x_post
         samples["sbi_posterior_map"] = theta_map
         simulations["sbi_posterior_map"] = x_map
-        return SBIResults(self.simulator, self.sbi_prior, self.sbi_posterior, self.calibration_posterior, obs_target, samples, simulations)
+        return SBIResults(self.simulator, self.sbi_prior, self.sbi_posterior, self.calibration_posterior, summary_target, samples, simulations)
 
-def simulator(
-    wgen: WGEN,
-    timestamps=None,
-    predictors=None,
-    initial_state=None,
-    observable=None,
+def build_simulator(
+    model: AbstractTimeSeriesModel,
+    summarizer: Summarizer,
+    *prior_args,
     parallel=True,
     rng_seed=0,
     **prior_kwargs,
 ):
-    """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `observable`.
-        The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
-        Returns the simulator function as well as the corresponding prior distribution.
+    """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `summarizer`.
+    The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
+    Returns a `BatchSimulator` wrapper and optionally the corresponding prior distribution.
 
     Args:
-        observable (_type_, optional): observable function for `simulate`. Defaults to None.
+        model (AbstractTimeSeriesModel): generative time series model to build simulator from.
+        summarizer (Summarizer): summary stats function, generated with `@summarystats` decorator.
+        parallel (bool, optional): whether or not to execute simulations in parallel on CPU or GPU. Defaults to True.
         rng_seed (int, optional): random seed. Defaults to 0.
 
     Returns:
-        tuple: simulator_func, prior
+        BatchSimulator: batched simulator wrapper
     """
-    timestamps = wgen.timestamps if timestamps is None else timestamps
-    predictors = wgen.predictors if predictors is None else predictors
-    initial_state = (
-        initial_state if initial_state is not None else wgen.initial_states[:, wgen.first_valid_idx, :, :]
-    )
+    assert isinstance(model, AbstractTimeSeriesModel), "model must be an implementation of "
     prior = StochasticFunctionDistribution(
-        wgen.prior,
-        fn_args=(predictors, initial_state),
+        model.prior,
+        fn_args=prior_args,
         fn_kwargs=prior_kwargs,
         unconstrained=True,
         rng_seed=rng_seed,
@@ -142,48 +144,42 @@ def simulator(
             k: v for k, v in prior.constrain(theta, as_dict=True).items()
         }
         # run simulations using numpyro predictive
-        predictive = Predictive(wgen.simulate, posterior_samples=params, parallel=parallel)
+        predictive = Predictive(model.simulate, posterior_samples=params, parallel=parallel)
         preds = predictive(prng)
-        # call osbervable function if defined
-        if observable is not None:
-            return observable(**preds)
-        else:
-            return preds
+        # splat predicted variables into summary stats function
+        return summarizer(**preds)
 
-    return Simulator(simulator, prior, rng_seed)
-    
+    return BatchSimulator(simulator, summarizer, prior, default_prng)
+
 def run_sbi(
-    simulator: Simulator,
-    obs_target,
-    prior = None,
-    calibration_posterior = None,
-    num_samples = 1000,
-    num_rounds = 1,
-    simulations_per_round = 1000,
-    simulation_batch_size = None,
+    simulator: BatchSimulator,
+    summary_target: jax.Array,
+    prior: dist.Distribution = None,
+    calibration_posterior: dist.Distribution = None,
+    num_samples: int = 1000,
+    num_rounds: int = 1,
+    simulations_per_round: int = 1000,
+    simulation_batch_size: int = None,
     sbi_alg = SNPE,
-    map_kwargs = dict(),
-    rng_seed = 1234,
+    map_kwargs: dict = dict(),
+    rng_seed: int = 1234,
 ):
     """
     Run SBI on a weather generator to calibrate it to a set of target statistics.
 
     Args:
         simulator: A Simulator which maps from parameters to simulation ou tputs (summary statistics).
-        prior: Prior (and initial proposal) distribution to use for SBI as numpyro distribution.
-        observable_func: A function taking as input arrays of realizations of ts, precip, Tmin, Tavg, Tmax and outputting summary statistics.
-        obs_target: A vector of target summary statistics.
-        scale_factor: Scaling amount for the posterior to obtain the SBI prior.
-        parameter_mask: A mask to keep certain parameters from being scaled up. Helps with the SBI fit.
+        summary_target: A vector of target summary statistics.
+        prior (dist.Distribution): a prior (and initial proposal) distribution to use for SBI as numpyro distribution.
         
     Returns:
-        tuple[array,array | None]: outputs, observable
-    sim, _ = wgen.simulator(observable=observable_func, rng_seed=1234)
+        SBIResults
     """
     # parameter checks
     simulation_batch_size = simulations_per_round if simulation_batch_size is None else simulation_batch_size
     assert simulation_batch_size <= simulations_per_round, "batch size must be <= number of simulations per round"
     assert num_rounds >= 1, "number of rounds must be >= 1"
+    assert isinstance(simulator, BatchSimulator)
     
     # PRNG
     prng = jax.random.PRNGKey(rng_seed)
@@ -241,13 +237,13 @@ def run_sbi(
         logger.info("Training estimator")
         density_estimator = sbi_alg.train()
         # Build posterior and update proposal
-        sbi_posterior = sbi_alg.build_posterior(density_estimator).set_default_x(j2t(obs_target.squeeze()))
+        sbi_posterior = sbi_alg.build_posterior(density_estimator).set_default_x(j2t(summary_target.squeeze()))
         proposal = sbi_posterior
         
     (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
         simulator,
         sbi_posterior,
-        obs_target,
+        summary_target,
         num_samples,
         simulation_batch_size,
         rng_seed,
@@ -258,20 +254,34 @@ def run_sbi(
     samples["sbi_posterior_map"] = theta_map
     simulations["sbi_posterior_map"] = x_map
         
-    return SBIResults(simulator, prior, sbi_posterior, calibration_posterior, obs_target, samples, simulations)
+    return SBIResults(simulator, prior, sbi_posterior, calibration_posterior, summary_target, samples, simulations)
 
 def simulate_from_sbi_posterior(
-    simulator,
+    simulator: BatchSimulator,
     sbi_posterior,
-    obs_target,
+    summary_target,
     num_samples=1000,
     simulation_batch_size=None,
     rng_seed=1234,
     map_kwargs=dict(),
-):    
+):
+    """Convenience method for sampling from the given SBI posterior and corresponding posterior predictive.
+
+    Args:
+        simulator (_type_): _description_
+        sbi_posterior (_type_): _description_
+        summary_target (_type_): _description_
+        num_samples (int, optional): _description_. Defaults to 1000.
+        simulation_batch_size (_type_, optional): _description_. Defaults to None.
+        rng_seed (int, optional): _description_. Defaults to 1234.
+        map_kwargs (_type_, optional): _description_. Defaults to dict().
+
+    Returns:
+        _type_: _description_
+    """
     # reset torch RNG seed
     torch.manual_seed(rng_seed)
-    theta_post = t2j(sbi_posterior.sample((num_samples,), x=j2t(obs_target)))
+    theta_post = t2j(sbi_posterior.sample((num_samples,), x=j2t(summary_target)))
   
     logger.info(f"Running {num_samples} simulations for SBI posterior")
     prng = jax.random.PRNGKey(rng_seed)
@@ -279,7 +289,7 @@ def simulate_from_sbi_posterior(
         
     # obtain MAP estimate
     logger.info(f"Finding MAP estimate")
-    theta_map = t2j(sbi_posterior.set_default_x(j2t(obs_target)).map(**map_kwargs))
+    theta_map = t2j(sbi_posterior.set_default_x(j2t(summary_target)).map(**map_kwargs))
     
     # broadcast to num_samples and run simulations
     logger.info(f"Running {num_samples} simulations for SBI posterior MAP estimate")
@@ -287,12 +297,24 @@ def simulate_from_sbi_posterior(
     return (theta_post, x_post), (theta_map, x_map)
 
 def get_rescaled_svi_posterior(
-    guide,
+    guide: AutoMultivariateNormal,
     svi_result,
     parameter_mask = None,
     scale_factor = 2.0,
     diagonal = True,
 ):
+    """Rescales the variance of the given SVI multivariate normal posterior.
+
+    Args:
+        guide (AutoMultivariateNormal): SVI autoguide; currently only `AutoMultivariateNormal` is supported.
+        svi_result (_type_): SVI result
+        parameter_mask (_type_, optional): parameter mask to apply. Defaults to None.
+        scale_factor (float, optional): square root of the variance scaling factor. Defaults to 2.0.
+        diagonal (bool, optional): whether or not to use only the diagonal of the SVI posterior. Defaults to True.
+
+    Returns:
+        dist.MultivariateNormal: A `MultivariateNormal` distribution with rescaled covaraince.
+    """
     fitted_posterior = guide.get_posterior(svi_result.params)
     parameter_mask = 1.0 if parameter_mask is None else parameter_mask
     # full covariance matrix

@@ -11,12 +11,12 @@ from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 from numpyro.handlers import mask
 from numpyro.contrib.control_flow import scan
 
-from abc import ABC
-
 from .wgen_gamlss import WGEN_GAMLSS
+from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars, check_if_list_in_string
+from ..types import AbstractTimeSeriesModel
 
-class WGEN(ABC):
+class WGEN(AbstractTimeSeriesModel):
 
     def __init__(
         self,
@@ -71,7 +71,9 @@ class WGEN(ABC):
         initial_states = self.model.get_initial_states(data, order=order)
         return initial_states
 
-    def prior(self, predictors, initial_states, **extra_kwargs):
+    def prior(self, predictors=None, initial_states=None, batch_idx=0, **extra_kwargs):
+        predictors = predictors if predictors is not None else self.predictors[batch_idx, :, :]
+        initial_states = initial_states if initial_states is not None else self.initial_states[batch_idx, :, :]
         return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
 
     def step(
@@ -199,9 +201,31 @@ class WGEN(ABC):
                 params[k] = jnp.array(v)
         return params
     
-    def get_parameter_mask(guide, ignore_elems):
+    def get_parameter_mask(self, ignore_elems, guide=None):
+        guide = self.guide if guide is None else guide
         return jnp.concat([jnp.zeros_like(x) if check_if_list_in_string(ignore_elems, k) else jnp.ones_like(x) for k, x in guide._init_locs.items()])
-
+    
+    def as_distribution(
+        self,
+        timestamps=None,
+        predictors=None,
+        initial_state=None,
+        rng_seed=1234,
+        **prior_kwargs,
+    ):
+        timestamps = self.timestamps if timestamps is None else timestamps
+        predictors = self.predictors if predictors is None else predictors
+        initial_state = (
+            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
+        )
+        dist = StochasticFunctionDistribution(
+            self.prior,
+            fn_args=(predictors, initial_state),
+            fn_kwargs=prior_kwargs,
+            unconstrained=True,
+            rng_seed=rng_seed,
+        )
+        return dist
 
     def sample(self, fit_result, **kwargs):
         if fit_result is numpyro.infer.svi.SVIRunResult:
