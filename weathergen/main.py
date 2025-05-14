@@ -1,28 +1,27 @@
 # %%
-import click
-import os
 import json
+import os
 import sys
 
+import click
+
 sys.path.append("../../src/python")
-
-# data loading
-import pandas as pd
-import numpy as np
-
-# plotting
-import matplotlib.pyplot as plt
-
-import numpyro
-from numpyro.infer import SVI, Trace_ELBO
-from numpyro.infer.autoguide import AutoMultivariateNormal
 
 # jax
 import jax
 import jax.numpy as jnp
 import jax.random as random
 
+# plotting
+import matplotlib.pyplot as plt
+import numpy as np
+import numpyro
+
+# data loading
+import pandas as pd
 from jax.lib import xla_bridge
+from numpyro.infer import SVI, Trace_ELBO
+from numpyro.infer.autoguide import AutoMultivariateNormal
 
 import weathergen as wx
 

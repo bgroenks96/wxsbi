@@ -281,15 +281,6 @@ def precip_model(
         prev_log_prec = jnp.log(1 + prec_prev)
         lag_preds = jnp.concat([prev_dry, prev_log_prec], axis=1)
 
-        # Seasonal interactions
-        # seasonal_lag_interactions_amounts = jnp.concat(
-        #     [ff_t * log_prec_prev[:, i : (i + 1)] for i in range(order)], axis=1
-        # )
-        # seasonal_lag_interactions_occ = jnp.concat([ff_t * prev_dry[:, i : (i + 1)] for i in range(order)], axis=1)
-        # seasonal_Tavg_interactions = (
-        #     utils.fourier_feats(i, freqs=[1 / 365.25], intercept=False) * jnp.ones((prec_prev.shape[0], 1)) * Tavg
-        # )
-
         # Parameters
         p_wet, _ = precip_occ_glm(t, lag_preds, (lag_preds, t), Tavg, (Tavg, t), predictors)
         p_wet = numpyro.deterministic("p_wet", p_wet)
@@ -387,7 +378,7 @@ def Trange_skew_model(
         link=glm.LogitLink(),
     )
 
-    # Tskew diepersion
+    # Tskew dispersion
     Tskew_disp_seasonal_effects = glm.SeasonalEffects("Tskew_disp_seasonal", freqs)
     Tskew_disp_Tavg_effects = glm.LinearEffects("Tskew_disp_Tavg", 1, scale_or_cov=0.1)
     Tskew_disp_pred_effects = glm.LinearEffects("Tskew_disp_pred", num_predictors, scale_or_cov=pred_effect_scale)

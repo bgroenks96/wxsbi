@@ -1,22 +1,21 @@
-import pandas as pd
-import h5py as h5
 import logging
-
-import jax
-import jax.numpy as jnp
-
-import numpyro
-from numpyro.infer import Predictive, SVI, TraceGraph_ELBO, MCMC, NUTS, HMCECS
-from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
-from numpyro.handlers import mask
-from numpyro.contrib.control_flow import scan
-
 from abc import ABC
 from typing import List, Tuple
 
-from .wgen_gamlss import WGEN_GAMLSS
+import h5py as h5
+import jax
+import jax.numpy as jnp
+import numpyro
+import pandas as pd
+from numpyro.contrib.control_flow import scan
+from numpyro.handlers import mask
+from numpyro.infer import HMCECS, MCMC, NUTS, SVI, Predictive, TraceGraph_ELBO
+from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
+
 from ..distributions import StochasticFunctionDistribution
 from ..utils import extract_time_vars
+from .wgen_gamlss import WGEN_GAMLSS
+
 
 class WGEN(ABC):
 
@@ -28,7 +27,7 @@ class WGEN(ABC):
         order=1,
         **kwargs,
     ):
-        """Initializes the WGEN model with the given observation dataset and model 
+        """Initializes the WGEN model with the given observation dataset and model
 
         Args:
             data (pd.DataFrame): _description_

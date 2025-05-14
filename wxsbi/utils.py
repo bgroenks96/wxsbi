@@ -1,7 +1,8 @@
-import jax
-
 from functools import partial
-from jax2torch.jax2torch import jax2torch, j2t, t2j
+
+import jax
+from jax2torch.jax2torch import j2t, jax2torch, t2j
+
 
 class NumPyro2TorchDistribution:
     def __init__(self, numpyro_dist, rng_key=jax.random.PRNGKey(0)):
@@ -22,4 +23,3 @@ class NumPyro2TorchDistribution:
     @partial(jax.jit, static_argnums=[0])
     def _log_prob(self, x):
         return self.dist.log_prob(x)
-    
