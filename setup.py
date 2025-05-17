@@ -19,7 +19,7 @@ for r in requires:
         install_requires.append(r)
 
 setup(name='wxsbi',
-      version='0.0.1',
+      version='0.1.0',
       description='A flexible toolkit for stochastic weather simulation using numpyro/jax and simulation-based inference.',
       author='Brian Groenke, Jakob Wessel',
       maintainer='Brian Groenke',
