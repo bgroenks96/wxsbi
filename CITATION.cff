@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Groenke
+    given-names: Brian
+    orcid: https://orcid.org/0000-0003-2570-9342
+  - family-names: Wessel
+    given-names: Jakob
+    orcid: https://orcid.org/0000-0003-2621-2477
+title: "wxsbi"
+version: 0.1.0
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.15448999
+date-released: 2025-05-17

@@ -1,5 +1,5 @@
-from . import utils, distributions, glm
-from .utils import precip_summary_stats, dry_spells, cumulative_dry_days
+from . import distributions, glm, utils
+from .utils import cumulative_dry_days, dry_spells, precip_summary_stats
 from .distributions import BernoulliGamma, LogitNormal, from_moments
 from .types import *
 # WGEN models
