@@ -11,6 +11,12 @@ def batch_select(x, idx):
     return jax.vmap(lambda x, idx: x[idx])(x * jnp.ones((idx.shape[0], x.shape[1])), idx)
 
 
+def check_if_list_in_string(l, x):
+    for elem in l:
+        if elem in x:
+            return True
+    return False
+
 def extract_time_vars(timestamps):
     if isinstance(timestamps, pd.DatetimeIndex):
         batch_size = 1

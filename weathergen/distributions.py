@@ -4,6 +4,8 @@ import jax
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
+
+from numpyro.util import is_prng_key
 from numpyro.distributions.util import promote_shapes
 from numpyro.util import is_prng_key
 
@@ -107,7 +109,12 @@ class BernoulliGamma(dist.Distribution):
         )
 
 
+
 class StochasticFunctionDistribution(dist.Distribution):
+    """Allows a `numpyro` stochastic function/model to be represented as a product `Distribution`.
+    All `sample` sites are considered random variables following their corresponding marginal densities.
+    """
+    
     def __init__(self, fn, fn_args=(), fn_kwargs=dict(), rng_seed=0, unconstrained=False, validate_args=None):
         """
         Wraps a `numpyro` stochastic function and provides convenient `log_prob` and `sample` functions that allow
@@ -239,3 +246,4 @@ class StochasticFunctionDistribution(dist.Distribution):
         Note that this method assumes the batch dimension to already be present in the parameter samples.
         """
         return jnp.concat([params[k] for k in self.params], axis=1)
+
