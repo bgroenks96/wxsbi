@@ -9,6 +9,7 @@ from numpyro.infer import Predictive
 from numpyro.infer.autoguide import AutoMultivariateNormal
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 from abc import ABC
@@ -27,17 +28,33 @@ from .utils import *
 
 
 class BatchSimulator(ABC):
-    """Wrapper type for simulator functions that allows for batched evaluation.
-    """
-    
-    def __init__(self, sim_func, summarizer, prior, default_prng=jax.random.PRNGKey(0)):
-        self.sim_func = sim_func
+    """Wrapper type for simulator functions that allows for batched evaluation."""
+
+    def __init__(self, simulate_ts_func, summarizer, default_prng=jax.random.PRNGKey(0)):
+        self.simulate_ts_func = simulate_ts_func
         self.summarizer = summarizer
-        self.prior = prior
         self.default_prng = default_prng
         super().__init__()
-        
-    def __call__(self, theta, batch_size=None, prng=None):    
+
+    def __call__(self, theta, batch_size=None, prng=None):
+        """Alias for BatchSimulator.simulate."""
+        return self.simulate(theta, batch_size, prng)
+
+    def simulate(self, theta, batch_size=None, prng=None):
+        """
+        Simulates from the simulator and computes summary statistics for given parameter samples.
+        Returns jnp.array with shape: [n_parameter_samples, n_summary_stats].
+
+        Args:
+            theta (jnp.array): Array of shape [n_samples, n_params] containing the weather generator
+                parameter values for each simulation run.
+            batch_size (int, optional): Number of parameter sets to simulate per batch. If None,
+                all parameter sets are simulated in a single batch.
+            prng (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation. If None,
+                the object's default PRNG key is used.
+        Returns:
+            jnp.array: summary statistics from simulations, shape: [n_parameter_samples, n_summary_stats].
+        """
         assert len(theta.shape) == 2, "theta must be a matrix of shape n_samples x n_params"
         num_samples = theta.shape[0]
         batch_size = num_samples if batch_size is None else batch_size
@@ -48,11 +65,57 @@ class BatchSimulator(ABC):
             for i in tqdm(range(0, num_samples, batch_size)):
                 lo = i
                 hi = min(i + batch_size, num_samples)
-                xs.append(self.sim_func(theta[lo:hi], prng))
+                xs.append(self.summarizer(**self.simulate_ts_func(theta[lo:hi], prng)))
             x = jnp.concat(xs, axis=0)
         else:
-            x = self.sim_func(theta, prng)
+            x = self.summarizer(**self.simulate_ts_func(theta, prng))
         return x
+
+    def simulate_ts(self, theta, observables=None, batch_size=None, prng=None):
+        """
+        Simulates time series data from the simulator for given parameter samples.
+
+        Args:
+            theta (jnp.array): Array of shape [n_samples, n_params] containing the weather generator
+                parameter values for each simulation run.
+            observables (list of str, optional): List of observable names to return from the
+                simulation output. If None, all available observables are returned.
+            batch_size (int, optional): Number of parameter sets to simulate per batch. If None,
+                all parameter sets are simulated in a single batch.
+            prng (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation. If None,
+                the object's default PRNG key is used.
+
+        Returns:
+            dict[str, jnp.array]: Dictionary mapping each observable name to its corresponding
+            simulated data array. Each array has shape [n_samples, n_timesteps, 1].
+        """
+        assert len(theta.shape) == 2, "theta must be a matrix of shape n_samples x n_params"
+        num_samples = theta.shape[0]
+        batch_size = num_samples if batch_size is None else batch_size
+        prng = self.default_prng if prng is None else prng
+        # Run simulations
+        if batch_size < num_samples:
+            xs = []
+            for i in tqdm(range(0, num_samples, batch_size)):
+                lo = i
+                hi = min(i + batch_size, num_samples)
+                if observables is not None:
+                    xs.append(
+                        {
+                            key: val
+                            for key, val in self.simulate_ts_func(theta[lo:hi], prng).items()
+                            if key in observables
+                        }
+                    )
+                else:
+                    xs.append(**self.simulate_ts_func(theta[lo:hi], prng))
+            x = {key: jnp.concat([d[key] for d in x], axis=0) for key in x[0].keys()}
+        else:
+            x = self.simulate_ts_func(theta, prng)
+            if observables is not None:
+                x = {key: val for key, val in x.items() if key in observables}
+        return x
+
 
 class SBIResults:
     def __init__(
@@ -62,7 +125,7 @@ class SBIResults:
         sbi_posterior,
         calibration_posterior,
         summary_target,
-        samples: dict,
+        parameter_samples: dict,
         simulations: dict,
     ):
         self.simulator = simulator
@@ -70,9 +133,9 @@ class SBIResults:
         self.sbi_posterior = sbi_posterior
         self.calibration_posterior = calibration_posterior
         self.summary_target = summary_target
-        self.samples = samples
+        self.parameter_samples = parameter_samples
         self.simulations = simulations
-    
+
     def with_target(self, summary_target, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
         """Resamples from the SBI posterior for an alternative choice of `summary_target` and returns a
         new `SBIResults` object with the updated posterior samples and simulations.
@@ -86,7 +149,7 @@ class SBIResults:
         Returns:
             _type_: _description_
         """
-        num_samples = self.samples["sbi_posterior"].shape[0]
+        num_samples = self.parameter_samples["sbi_posterior"].shape[0]
         simulation_batch_size = num_samples if simulation_batch_size is None else simulation_batch_size
         (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
             self.simulator,
@@ -97,13 +160,50 @@ class SBIResults:
             rng_seed,
             map_kwargs,
         )
-        samples = self.samples.copy()
+        parameter_samples = self.parameter_samples.copy()
         simulations = self.simulations.copy()
-        samples["sbi_posterior"] = theta_post
+        parameter_samples["sbi_posterior"] = theta_post
         simulations["sbi_posterior"] = x_post
-        samples["sbi_posterior_map"] = theta_map
+        parameter_samples["sbi_posterior_map"] = theta_map
         simulations["sbi_posterior_map"] = x_map
-        return SBIResults(self.simulator, self.sbi_prior, self.sbi_posterior, self.calibration_posterior, summary_target, samples, simulations)
+        return SBIResults(
+            self.simulator,
+            self.sbi_prior,
+            self.sbi_posterior,
+            self.calibration_posterior,
+            summary_target,
+            parameter_samples,
+            simulations,
+        )
+
+    def simulate_ts(self, *which, observables=None, batch_size=None, prng=None):
+        """Simulates time series from the SBI results.
+
+        Args:
+            which (list, optional): from which parameter samples to simulate the time series.
+                If not specified then all are used.
+            observables (list of str, optional): List of observable names to return from the
+                simulation output. If None, all available observables are returned.
+            batch_size (int, optional): Number of parameter sets to simulate per batch. If None,
+                all parameter sets are simulated in a single batch.
+            prng (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation. If None,
+                the object's default PRNG key is used.
+        Returns:
+            dict[str, jnp.array]: Dictionary mapping each parameter sample type ("sbi_prior", "sbi_posterior", etc.)
+            and each observable name to its corresponding simulated data array. Each array has shape [n_samples, n_timesteps, 1].
+        """
+        if len(which) == 0:
+            return {
+                key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
+                for key, val in self.parameter_samples.items()
+            }
+        else:
+            return {
+                key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
+                for key, val in self.parameter_samples.items()
+                if key in which
+            }
+
 
 def build_simulator(
     model: AbstractTimeSeriesModel,
@@ -134,22 +234,21 @@ def build_simulator(
         unconstrained=True,
         rng_seed=rng_seed,
     )
-    
+
     default_prng = jax.random.PRNGKey(rng_seed)
 
-    def simulator(_theta, prng=default_prng):
+    def simulate_ts(_theta, prng=default_prng):
         theta = _theta if len(_theta.shape) > 1 else _theta.reshape((1, -1))
         # batch_size = theta.shape[0]
-        params = {
-            k: v for k, v in prior.constrain(theta, as_dict=True).items()
-        }
+        params = {k: v for k, v in prior.constrain(theta, as_dict=True).items()}
         # run simulations using numpyro predictive
         predictive = Predictive(model.simulate, posterior_samples=params, parallel=parallel)
         preds = predictive(prng)
         # splat predicted variables into summary stats function
-        return summarizer(**preds)
+        return preds
 
-    return BatchSimulator(simulator, summarizer, prior, default_prng)
+    return BatchSimulator(simulate_ts, summarizer, default_prng)
+
 
 def run_sbi(
     simulator: BatchSimulator,
@@ -160,7 +259,7 @@ def run_sbi(
     num_rounds: int = 1,
     simulations_per_round: int = 1000,
     simulation_batch_size: int = None,
-    sbi_alg = SNPE,
+    sbi_alg=SNPE,
     map_kwargs: dict = dict(),
     rng_seed: int = 1234,
 ):
@@ -171,7 +270,7 @@ def run_sbi(
         simulator: A Simulator which maps from parameters to simulation ou tputs (summary statistics).
         summary_target: A vector of target summary statistics.
         prior (dist.Distribution): a prior (and initial proposal) distribution to use for SBI as numpyro distribution.
-        
+
     Returns:
         SBIResults
     """
@@ -180,37 +279,37 @@ def run_sbi(
     assert simulation_batch_size <= simulations_per_round, "batch size must be <= number of simulations per round"
     assert num_rounds >= 1, "number of rounds must be >= 1"
     assert isinstance(simulator, BatchSimulator)
-    
+
     # PRNG
     prng = jax.random.PRNGKey(rng_seed)
-    
+
     # Dict for collecting results
-    samples = dict()
+    parameter_samples = dict()
     simulations = dict()
-    
+
     if calibration_posterior is not None:
         # Posterior mean
         logger.info(f"Running {num_samples} simulations for calibration posterior mean")
-        theta_cm = calibration_posterior.mean.reshape((1,-1))*jnp.ones((num_samples,1))
+        theta_cm = calibration_posterior.mean.reshape((1, -1)) * jnp.ones((num_samples, 1))
         x_cm = simulator(theta_cm, batch_size=simulation_batch_size, prng=prng)
         # Full calibration posterior
         logger.info(f"Running {num_samples} simulations for full calibration posterior")
         theta_cp = calibration_posterior.sample(prng, (num_samples,))
         x_cp = simulator(theta_cp, batch_size=simulation_batch_size, prng=prng)
         # store results in dict(s)
-        samples["calibration_posterior_mean"] = theta_cm
+        parameter_samples["calibration_posterior_mean"] = theta_cm
         simulations["calibration_posterior_mean"] = x_cm
-        samples["calibration_posterior"] = theta_cp
+        parameter_samples["calibration_posterior"] = theta_cp
         simulations["calibration_posterior"] = x_cp
-    
+
     # Generate prior samples/simulations
     logger.info(f"Running {num_samples} simulations for SBI prior")
     prior = simulator.prior if prior is None else prior
     theta_prior = prior.sample(prng, (num_samples,))
     x_prior = simulator(theta_prior, batch_size=simulation_batch_size, prng=prng)
-    samples["sbi_prior"] = theta_prior
+    parameter_samples["sbi_prior"] = theta_prior
     simulations["sbi_prior"] = x_prior
-    
+
     # Convert prior to torch distribution
     if isinstance(prior, dist.MultivariateNormal):
         torchprior = torchdist.MultivariateNormal(j2t(prior.mean), j2t(prior.covariance_matrix))
@@ -239,7 +338,7 @@ def run_sbi(
         # Build posterior and update proposal
         sbi_posterior = sbi_alg.build_posterior(density_estimator).set_default_x(j2t(summary_target.squeeze()))
         proposal = sbi_posterior
-        
+
     (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
         simulator,
         sbi_posterior,
@@ -249,12 +348,15 @@ def run_sbi(
         rng_seed,
         map_kwargs,
     )
-    samples["sbi_posterior"] = theta_post
+    parameter_samples["sbi_posterior"] = theta_post
     simulations["sbi_posterior"] = x_post
-    samples["sbi_posterior_map"] = theta_map
+    parameter_samples["sbi_posterior_map"] = theta_map
     simulations["sbi_posterior_map"] = x_map
-        
-    return SBIResults(simulator, prior, sbi_posterior, calibration_posterior, summary_target, samples, simulations)
+
+    return SBIResults(
+        simulator, prior, sbi_posterior, calibration_posterior, summary_target, parameter_samples, simulations
+    )
+
 
 def simulate_from_sbi_posterior(
     simulator: BatchSimulator,
@@ -282,26 +384,29 @@ def simulate_from_sbi_posterior(
     # reset torch RNG seed
     torch.manual_seed(rng_seed)
     theta_post = t2j(sbi_posterior.sample((num_samples,), x=j2t(summary_target)))
-  
+
     logger.info(f"Running {num_samples} simulations for SBI posterior")
     prng = jax.random.PRNGKey(rng_seed)
     x_post = simulator(theta_post, batch_size=simulation_batch_size, prng=prng)
-        
+
     # obtain MAP estimate
     logger.info(f"Finding MAP estimate")
     theta_map = t2j(sbi_posterior.set_default_x(j2t(summary_target)).map(**map_kwargs))
-    
+
     # broadcast to num_samples and run simulations
     logger.info(f"Running {num_samples} simulations for SBI posterior MAP estimate")
-    x_map = simulator(theta_map.reshape((1,-1))*jnp.ones((num_samples,1)), batch_size=simulation_batch_size, prng=prng)
+    x_map = simulator(
+        theta_map.reshape((1, -1)) * jnp.ones((num_samples, 1)), batch_size=simulation_batch_size, prng=prng
+    )
     return (theta_post, x_post), (theta_map, x_map)
+
 
 def get_rescaled_svi_posterior(
     guide: AutoMultivariateNormal,
     svi_result,
-    parameter_mask = None,
-    scale_factor = 2.0,
-    diagonal = True,
+    parameter_mask=None,
+    scale_factor=2.0,
+    diagonal=True,
 ):
     """Rescales the variance of the given SVI multivariate normal posterior.
 
@@ -324,7 +429,7 @@ def get_rescaled_svi_posterior(
     # identity matrix
     I = jnp.eye(len(fitted_posterior.mean))
     if diagonal:
-        rescaled_cov = D*I + parameter_mask*(scale_factor**2 - 1)*I*D
+        rescaled_cov = D * I + parameter_mask * (scale_factor**2 - 1) * I * D
     else:
-        rescaled_cov = C + parameter_mask*(scale_factor**2 - 1)*I*D
+        rescaled_cov = C + parameter_mask * (scale_factor**2 - 1) * I * D
     return dist.MultivariateNormal(fitted_posterior.mean, rescaled_cov)
