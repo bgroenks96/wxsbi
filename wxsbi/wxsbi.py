@@ -1,18 +1,19 @@
+import logging
+import pickle
+
 import jax
 import jax.numpy as jnp
-
+import numpyro.distributions as dist
 import torch
 import torch.distributions as torchdist
-
-import numpyro.distributions as dist
 from numpyro.infer import Predictive
 from numpyro.infer.autoguide import AutoMultivariateNormal
-
-import logging
 
 logger = logging.getLogger(__name__)
 
 from abc import ABC
+from typing import Union
+
 from jax2torch.jax2torch import j2t, t2j
 from sbi.inference import SNPE
 from sbi.utils.user_input_checks import process_prior
@@ -20,8 +21,6 @@ from tqdm import tqdm
 
 from weathergen.distributions import StochasticFunctionDistribution
 from weathergen.types import AbstractTimeSeriesModel
-
-from typing import Union
 
 from .summarizers import Summarizer
 from .utils import *
@@ -151,7 +150,7 @@ class SBIResults:
         """
         num_samples = self.parameter_samples["sbi_posterior"].shape[0]
         simulation_batch_size = num_samples if simulation_batch_size is None else simulation_batch_size
-        (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
+        (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
             self.simulator,
             self.sbi_posterior,
             summary_target,
@@ -203,6 +202,95 @@ class SBIResults:
                 for key, val in self.parameter_samples.items()
                 if key in which
             }
+
+    def simulate_from_sbi_prior(
+        self,
+        return_ts=False,
+        num_samples=1000,
+        simulation_batch_size=None,
+        rng_seed=1234,
+        map_kwargs=dict(),
+    ):
+        """Convenience method for sampling from the given SBI prior.
+
+        Args:
+            simulator (_type_): _description_
+            sbi_posterior (_type_): _description_
+            summary_target (_type_): _description_
+            num_samples (int, optional): _description_. Defaults to 1000.
+            simulation_batch_size (_type_, optional): _description_. Defaults to None.
+            rng_seed (int, optional): _description_. Defaults to 1234.
+            map_kwargs (_type_, optional): _description_. Defaults to dict().
+
+        Returns:
+            _type_: _description_
+        """
+        prng = jax.random.PRNGKey(rng_seed)
+        theta_prior = self.prior.sample(prng, (num_samples,))
+        if return_ts:
+            ts_prior = self.simulator.simulate_ts(theta_prior, batch_size=simulation_batch_size, prng=prng)
+            x_prior = self.simulator.summarizer(**ts_prior)
+        else:
+            x_prior = self.simulator(theta_prior, batch_size=simulation_batch_size, prng=prng)
+
+        if return_ts:
+            return theta_prior, ts_prior, x_prior
+        else:
+            return theta_prior, x_prior
+
+    def simulate_from_sbi_posterior(
+        self,
+        summary_target=None,
+        return_ts=False,
+        num_samples=1000,
+        simulation_batch_size=None,
+        rng_seed=1234,
+        map_kwargs=dict(),
+    ):
+        """Convenience method for sampling from the given SBI posterior and corresponding posterior predictive.
+
+        Args:
+            simulator (_type_): _description_
+            sbi_posterior (_type_): _description_
+            summary_target (_type_): _description_
+            num_samples (int, optional): _description_. Defaults to 1000.
+            simulation_batch_size (_type_, optional): _description_. Defaults to None.
+            rng_seed (int, optional): _description_. Defaults to 1234.
+            map_kwargs (_type_, optional): _description_. Defaults to dict().
+
+        Returns:
+            _type_: _description_
+        """
+        # reset torch RNG seed
+        torch.manual_seed(rng_seed)
+
+        if summary_target is None:
+            summary_target = self.summary_target
+
+        return _simulate_from_sbi_posterior(
+            simulator=self.simulator,
+            sbi_posterior=self.sbi_posterior,
+            summary_target=summary_target,
+            return_ts=return_ts,
+            num_samples=num_samples,
+            simulation_batch_size=simulation_batch_size,
+            rng_seed=rng_seed,
+            map_kwargs=map_kwargs,
+        )
+
+    def to_file(self, filename):
+        import dill
+
+        with open(filename, "wb") as outp:
+            dill.dump(self, outp)
+
+    @classmethod
+    def from_file(cls, filename):
+        import dill
+
+        with open(filename, "rb") as inp:
+            obj = dill.load(inp)
+        return obj
 
 
 def build_simulator(
@@ -339,14 +427,15 @@ def run_sbi(
         sbi_posterior = sbi_alg.build_posterior(density_estimator).set_default_x(j2t(summary_target.squeeze()))
         proposal = sbi_posterior
 
-    (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
+    (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
         simulator,
         sbi_posterior,
         summary_target,
-        num_samples,
-        simulation_batch_size,
-        rng_seed,
-        map_kwargs,
+        return_ts=False,
+        num_samples=num_samples,
+        simulation_batch_size=simulation_batch_size,
+        rng_seed=rng_seed,
+        map_kwargs=map_kwargs,
     )
     parameter_samples["sbi_posterior"] = theta_post
     simulations["sbi_posterior"] = x_post
@@ -358,10 +447,11 @@ def run_sbi(
     )
 
 
-def simulate_from_sbi_posterior(
-    simulator: BatchSimulator,
+def _simulate_from_sbi_posterior(
+    simulator,
     sbi_posterior,
     summary_target,
+    return_ts=False,
     num_samples=1000,
     simulation_batch_size=None,
     rng_seed=1234,
@@ -373,6 +463,7 @@ def simulate_from_sbi_posterior(
         simulator (_type_): _description_
         sbi_posterior (_type_): _description_
         summary_target (_type_): _description_
+        return_ts (bool): _description_
         num_samples (int, optional): _description_. Defaults to 1000.
         simulation_batch_size (_type_, optional): _description_. Defaults to None.
         rng_seed (int, optional): _description_. Defaults to 1234.
@@ -383,11 +474,16 @@ def simulate_from_sbi_posterior(
     """
     # reset torch RNG seed
     torch.manual_seed(rng_seed)
+
     theta_post = t2j(sbi_posterior.sample((num_samples,), x=j2t(summary_target)))
 
     logger.info(f"Running {num_samples} simulations for SBI posterior")
     prng = jax.random.PRNGKey(rng_seed)
-    x_post = simulator(theta_post, batch_size=simulation_batch_size, prng=prng)
+    if return_ts:
+        ts_post = simulator.simulate_ts(theta_post, batch_size=simulation_batch_size, prng=prng)
+        x_post = simulator.summarizer(**ts_post)
+    else:
+        x_post = simulator(theta_post, batch_size=simulation_batch_size, prng=prng)
 
     # obtain MAP estimate
     logger.info(f"Finding MAP estimate")
@@ -395,10 +491,23 @@ def simulate_from_sbi_posterior(
 
     # broadcast to num_samples and run simulations
     logger.info(f"Running {num_samples} simulations for SBI posterior MAP estimate")
-    x_map = simulator(
-        theta_map.reshape((1, -1)) * jnp.ones((num_samples, 1)), batch_size=simulation_batch_size, prng=prng
-    )
-    return (theta_post, x_post), (theta_map, x_map)
+    if return_ts:
+        ts_map = simulator.simulate_ts(
+            theta_map.reshape((1, -1)) * jnp.ones((num_samples, 1)), batch_size=simulation_batch_size, prng=prng
+        )
+        x_map = simulator.summarizer(**ts_map)
+    else:
+        x_map = simulator(
+            theta_map.reshape((1, -1)) * jnp.ones((num_samples, 1)), batch_size=simulation_batch_size, prng=prng
+        )
+
+    if return_ts:
+        return (
+            (theta_post, ts_post, x_post),
+            (theta_map, ts_map, x_map),
+        )
+    else:
+        return (theta_post, x_post), (theta_map, x_map)
 
 
 def get_rescaled_svi_posterior(
