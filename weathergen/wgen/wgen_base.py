@@ -11,14 +11,11 @@ from numpyro.contrib.control_flow import scan
 from numpyro.handlers import mask
 from numpyro.infer import HMCECS, MCMC, NUTS, SVI, Predictive, TraceGraph_ELBO
 from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
-from numpyro.handlers import mask
-from numpyro.contrib.control_flow import scan
-
-from .wgen_gamlss import WGEN_GAMLSS
 
 from ..distributions import StochasticFunctionDistribution
-from ..utils import extract_time_vars, check_if_list_in_string
 from ..types import AbstractTimeSeriesModel
+from ..utils import check_if_list_in_string, extract_time_vars
+from .wgen_gamlss import WGEN_GAMLSS
 
 
 class WGEN(AbstractTimeSeriesModel):
@@ -60,17 +57,13 @@ class WGEN(AbstractTimeSeriesModel):
     def _valid_indices(self, initial_states, obs, order):
         # filter out time indices where initial_states is NaN or Inf at time t and t+1;
         # here indices 0 and 1 correspond to the observed variable and batch dimensions respectively
-        valid_mask_obs = jnp.stack([jnp.isfinite(v) for k, v in obs.items()]).any(
-            axis=[0, 1]
-        )
+        valid_mask_obs = jnp.stack([jnp.isfinite(v) for k, v in obs.items()]).any(axis=[0, 1])
         # here indices 0, 2, and 3 correspond to the batch, var, and lag dimensions
         valid_mask_initial_states = jnp.isfinite(initial_states).all(axis=[0, 2, 3])
         valid_mask = jnp.logical_and(valid_mask_obs[order:], valid_mask_initial_states)
         valid_idx = jnp.where(jnp.logical_and(valid_mask[:-1], valid_mask[1:]))[0]
         if len(valid_idx) < initial_states.shape[1]:
-            logging.warning(
-                f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps"
-            )
+            logging.warning(f"dropped {initial_states.shape[1] - len(valid_idx)} nan/inf timesteps")
         return valid_idx
 
     def get_obs(self, data: pd.DataFrame):
@@ -81,17 +74,9 @@ class WGEN(AbstractTimeSeriesModel):
         return initial_states
 
     def prior(self, predictors=None, initial_states=None, batch_idx=0, **extra_kwargs):
-        predictors = (
-            predictors if predictors is not None else self.predictors[batch_idx, :, :]
-        )
-        initial_states = (
-            initial_states
-            if initial_states is not None
-            else self.initial_states[batch_idx, :, :]
-        )
-        return self.model.prior(
-            predictors, initial_states, **self.model_kwargs, **extra_kwargs
-        )
+        predictors = predictors if predictors is not None else self.predictors[batch_idx, :, :]
+        initial_states = initial_states if initial_states is not None else self.initial_states[batch_idx, :, :]
+        return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
 
     def step(
         self,
@@ -118,24 +103,12 @@ class WGEN(AbstractTimeSeriesModel):
             _type_: _description_
         """
         obs = self.obs
-        timestamps = (
-            timestamps if timestamps is not None else self.timestamps[batch_idx, :, :]
-        )
-        predictors = (
-            predictors if predictors is not None else self.predictors[batch_idx, :, :]
-        )
-        initial_states = (
-            initial_states
-            if initial_states is not None
-            else self.initial_states[batch_idx, :, :]
-        )
+        timestamps = timestamps if timestamps is not None else self.timestamps[batch_idx, :, :]
+        predictors = predictors if predictors is not None else self.predictors[batch_idx, :, :]
+        initial_states = initial_states if initial_states is not None else self.initial_states[batch_idx, :, :]
         order = self.order
-        assert (
-            len(timestamps.shape) == 2 and timestamps.shape[1] == 4
-        ), "timestamps must have shape (timesteps, 4)"
-        assert (
-            len(predictors.shape) == 2
-        ), "predictors must have shape (timesteps, variables)"
+        assert len(timestamps.shape) == 2 and timestamps.shape[1] == 4, "timestamps must have shape (timesteps, 4)"
+        assert len(predictors.shape) == 2, "predictors must have shape (timesteps, variables)"
         assert (
             predictors.shape[0] == initial_states.shape[0] + order
         ), "leading time dimension for predictors and initial states must match"
@@ -144,13 +117,9 @@ class WGEN(AbstractTimeSeriesModel):
             step = self.prior(predictors, initial_states, **kwargs)
 
         # plate over time dimension starting from the second index
-        with numpyro.plate(
-            "time", len(self.valid_idx), subsample_size=subsample_time
-        ) as i:
+        with numpyro.plate("time", len(self.valid_idx), subsample_size=subsample_time) as i:
             idx = self.valid_idx[i]
-            inputs_i = jnp.concat(
-                [timestamps[idx + order, :], predictors[idx + order, :]], axis=-1
-            )
+            inputs_i = jnp.concat([timestamps[idx + order, :], predictors[idx + order, :]], axis=-1)
             initial_state = initial_states[idx, :, :]
             obs_i = dict([(k, v[0, idx + order]) for k, v in obs.items()])
             # evaluate step function with time as the batch dimension
@@ -179,20 +148,11 @@ class WGEN(AbstractTimeSeriesModel):
         Returns:
             tuple[array,array | None]: outputs, observable
         """
-        timestamps = (
-            timestamps
-            if timestamps is not None
-            else self.timestamps[:, self.first_valid_idx :, :]
-        )
+        timestamps = timestamps if timestamps is not None else self.timestamps[:, self.first_valid_idx :, :]
         assert (
-            len(timestamps.shape) == 3
-            and timestamps.shape[2] == self.timestamps.shape[2]
+            len(timestamps.shape) == 3 and timestamps.shape[2] == self.timestamps.shape[2]
         ), f"timestamps must have shape (batch_size, timesteps, {self.timestamps.shape[2]})"
-        predictors = (
-            predictors
-            if predictors is not None
-            else self.predictors[:, self.first_valid_idx :, :]
-        )
+        predictors = predictors if predictors is not None else self.predictors[:, self.first_valid_idx :, :]
         if batch_size is None:
             batch_size = predictors.shape[0]
         else:
@@ -247,11 +207,7 @@ class WGEN(AbstractTimeSeriesModel):
         guide = self.guide if guide is None else guide
         return jnp.concat(
             [
-                (
-                    jnp.zeros_like(x)
-                    if check_if_list_in_string(ignore_elems, k)
-                    else jnp.ones_like(x)
-                )
+                (jnp.zeros_like(x) if check_if_list_in_string(ignore_elems, k) else jnp.ones_like(x))
                 for k, x in guide._init_locs.items()
             ]
         )
@@ -267,9 +223,7 @@ class WGEN(AbstractTimeSeriesModel):
         timestamps = self.timestamps if timestamps is None else timestamps
         predictors = self.predictors if predictors is None else predictors
         initial_state = (
-            initial_state
-            if initial_state is not None
-            else self.initial_states[:, self.first_valid_idx, :, :]
+            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
         )
         dist = StochasticFunctionDistribution(
             self.prior,
@@ -316,9 +270,7 @@ class WGEN(AbstractTimeSeriesModel):
     ):
         # if guide is not specified, default to multivariate normal
         if guide is None:
-            guide = AutoMultivariateNormal(
-                self.step, init_loc_fn=numpyro.infer.init_to_median, init_scale=0.1
-            )
+            guide = AutoMultivariateNormal(self.step, init_loc_fn=numpyro.infer.init_to_median, init_scale=0.1)
         self.guide = guide
         svi = SVI(self.step, guide, optimizer, loss=loss)
         if iterations is None:
@@ -374,9 +326,7 @@ class WGEN(AbstractTimeSeriesModel):
         kernel_kwargs=dict(),
         **fn_kwargs,
     ):
-        mcmc_kernel = mcmc_kernel(
-            self.step, init_strategy=init_strategy, **kernel_kwargs
-        )
+        mcmc_kernel = mcmc_kernel(self.step, init_strategy=init_strategy, **kernel_kwargs)
         mcmc = MCMC(
             mcmc_kernel,
             num_warmup=num_warmup,
