@@ -6,5 +6,4 @@ from .types import *
 from .wgen import (
     WGEN,
     WGEN_GAMLSS,
-    WGEN_GAMLSS_SR,
 )

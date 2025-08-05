@@ -4,3 +4,4 @@ from .utils import (
 )
 from .wxsbi import *
 from .summarizers import *
+from .plotting import *
