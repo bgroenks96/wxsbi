@@ -179,8 +179,10 @@ class SBIResults:
             simulations,
         )
 
-    def simulate_ts(self, *which, observables=None, from_parameter_samples=True, batch_size=None, rng_seed=1234):
-        """Simulates time series from the SBI results.
+    def simulate_ts(
+        self, *which, observables=None, from_parameter_samples=True, batch_size=None, rng_seed=1234, num_samples=None
+    ):
+        """Simulates time series from the SBI results. Uses the sampled parameters, except if from_parameter_samples = False.
 
         Args:
             which (list, optional): from which parameter samples to simulate the time series.
@@ -188,12 +190,12 @@ class SBIResults:
             observables (list of str, optional): List of observable names to return from the
                 simulation output. If None, all available observables are returned.
             from_parameter_samples (bool): Whether to sample from stored parameter sets or
-                sample newly from distributions. Currently only from_parameter_samples = True is
-                implemented.
+                sample newly from distributions.
             batch_size (int, optional): Number of parameter sets to simulate per batch. If None,
                 all parameter sets are simulated in a single batch.
-            prng (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation. If None,
-                the object's default PRNG key is used.
+            rng_seed (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation.
+            num_samples (int, optional): Only used if from_parameter_samples = False. Determines
+                sample size of new simulations.
         Returns:
             dict[str, jnp.array]: Dictionary mapping each parameter sample type ("sbi_prior", "sbi_posterior", etc.)
             and each observable name to its corresponding simulated data array. Each array has shape [n_samples, n_timesteps, 1].
@@ -213,7 +215,53 @@ class SBIResults:
                     if key in which
                 }
         else:
-            raise NotImplementedError("Sampling from distributions, not parameter samples isn't implemented yet.")
+            """If which is empty (all are targets), we can make use of the resample function, else we need to sample from the individual model components."""
+            if len(which) == 0:
+                temp_resampled_sbi_results = self.resample(inplace=False, num_samples=num_samples)
+
+                return {
+                    key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
+                    for key, val in temp_resampled_sbi_results.parameter_samples.items()
+                }
+            else:
+                return_dict = {}
+                if "sbi_prior" in which:
+                    _, ts, _ = self.simulate_from_sbi_prior(
+                        return_ts=True,
+                        num_samples=num_samples,
+                        simulation_batch_size=batch_size,
+                        rng_seed=rng_seed,
+                    )
+
+                    return_dict["sbi_prior"] = ts
+
+                if "sbi_posterior" in which or "sbi_posterior_map" in which:
+                    (_, ts_post, _), (_, ts_map, _) = self.simulate_from_sbi_posterior(
+                        return_ts=True,
+                        num_samples=num_samples,
+                        simulation_batch_size=batch_size,
+                        rng_seed=rng_seed,
+                    )
+
+                    if "sbi_posterior" in which:
+                        return_dict["sbi_posterior"] = ts_post
+                    if "sbi_posterior_map" in which:
+                        return_dict["sbi_posterior_map"] = ts_map
+
+                if "calibration_posterior" in which or "calibration_posterior_mean" in which:
+                    (_, ts_cm, _), (_, ts_cp, _) = self.simulate_from_calibration_posterior(
+                        return_ts=True,
+                        num_samples=num_samples,
+                        simulation_batch_size=batch_size,
+                        rng_seed=rng_seed,
+                    )
+
+                    if "calibration_posterior" in which:
+                        return_dict["calibration_posterior"] = ts_cm
+                    if "calibration_posterior_mean" in which:
+                        return_dict["calibration_posterior_mean"] = ts_cp
+
+                return return_dict
 
     def resample(self, inplace=False, num_samples=None, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
         """Samples to regenerate parameter_samples and simulations in the object.
