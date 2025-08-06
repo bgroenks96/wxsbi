@@ -8,7 +8,9 @@ def plot_target_densitites_sbi(results: SBIResults, cmap="Dark2"):
     summary_names = results.simulator.summarizer.names
     fig, axs = plt.subplots(1, summary_target.shape[0], figsize=(summary_target.shape[0] * 5, 5))
     cmap = plt.cm.get_cmap(cmap).colors
-    for i in range(summary_target.shape[0]):
+    if summary_target.shape[0] == 1:
+        axs = [axs]
+    for i, ax in enumerate(axs):
         handles = []
         if "calibration_posterior" in results.simulations:
             _, _, h1 = axs[i].hist(
@@ -55,7 +57,7 @@ def plot_target_densitites_sbi(results: SBIResults, cmap="Dark2"):
                 alpha=0.5,
                 label="SBI posterior MAP",
             )
-        # axs[i].set_title(summary_names[i])
+        axs[i].set_title(summary_names[i])
         target_line = axs[i].axvline(summary_target[i].flatten(), color="black", label="Target")
     handles, labels = axs[0].get_legend_handles_labels()
     fig.legend(handles=handles, labels=labels, loc="lower center", bbox_to_anchor=(0.5, -0.1), ncol=6)
