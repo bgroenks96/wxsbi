@@ -179,7 +179,7 @@ class SBIResults:
             simulations,
         )
 
-    def simulate_ts(self, *which, observables=None, batch_size=None, prng=None):
+    def simulate_ts(self, *which, observables=None, from_parameter_samples=True, batch_size=None, rng_seed=1234):
         """Simulates time series from the SBI results.
 
         Args:
@@ -187,6 +187,9 @@ class SBIResults:
                 If not specified then all are used.
             observables (list of str, optional): List of observable names to return from the
                 simulation output. If None, all available observables are returned.
+            from_parameter_samples (bool): Whether to sample from stored parameter sets or
+                sample newly from distributions. Currently only from_parameter_samples = True is
+                implemented.
             batch_size (int, optional): Number of parameter sets to simulate per batch. If None,
                 all parameter sets are simulated in a single batch.
             prng (int or PRNGKey, optional): Random seed or JAX PRNGKey for simulation. If None,
@@ -195,17 +198,139 @@ class SBIResults:
             dict[str, jnp.array]: Dictionary mapping each parameter sample type ("sbi_prior", "sbi_posterior", etc.)
             and each observable name to its corresponding simulated data array. Each array has shape [n_samples, n_timesteps, 1].
         """
-        if len(which) == 0:
-            return {
-                key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
-                for key, val in self.parameter_samples.items()
-            }
+        prng = jax.random.PRNGKey(rng_seed)
+
+        if from_parameter_samples:
+            if len(which) == 0:
+                return {
+                    key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
+                    for key, val in self.parameter_samples.items()
+                }
+            else:
+                return {
+                    key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
+                    for key, val in self.parameter_samples.items()
+                    if key in which
+                }
         else:
-            return {
-                key: self.simulator.simulate_ts(val, observables=observables, batch_size=batch_size, prng=prng)
-                for key, val in self.parameter_samples.items()
-                if key in which
-            }
+            raise NotImplementedError("Sampling from distributions, not parameter samples isn't implemented yet.")
+
+    def resample(self, inplace=False, num_samples=None, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
+        """Samples to regenerate parameter_samples and simulations in the object.
+
+        Args:
+            inplace (bool): Whether to replace in memory or to return a new oject.
+            num_samples (int): Number of samples to generate.
+            simulation_batch_size (int, optional). Simulation batch size.
+            rng_seed (int, optional): Random seed, Defaults to 1234.
+            map_kwargs (_type_, optional): _description_. Defaults to dict().
+        Returns:
+            dict[str, jnp.array]: Dictionary mapping each parameter sample type ("sbi_prior", "sbi_posterior", etc.)
+            and each observable name to its corresponding simulated data array. Each array has shape [n_samples, n_timesteps, 1].
+        """
+
+        if num_samples is None:
+            num_samples = self.parameter_samples["sbi_posterior"].shape[0]
+        simulation_batch_size = num_samples if simulation_batch_size is None else simulation_batch_size
+
+        parameter_samples = self.parameter_samples.copy()
+        simulations = self.simulations.copy()
+
+        # Generate calibration posterior samples/simulations
+        if self.calibration_posterior is not None:
+            (theta_cm, x_cm), (theta_cp, x_cp) = self.simulate_from_calibration_posterior(
+                return_ts=False, num_samples=num_samples, simulation_batch_size=simulation_batch_size, rng_seed=rng_seed
+            )
+            # store results in dict(s)
+            parameter_samples["calibration_posterior_mean"] = theta_cm
+            simulations["calibration_posterior_mean"] = x_cm
+            parameter_samples["calibration_posterior"] = theta_cp
+            simulations["calibration_posterior"] = x_cp
+
+        # Generate prior samples/simulations
+        theta_prior, x_prior = self.simulate_from_sbi_prior(
+            return_ts=False,
+            num_samples=num_samples,
+            simulation_batch_size=simulation_batch_size,
+            rng_seed=rng_seed,
+            map_kwargs=map_kwargs,
+        )
+        parameter_samples["sbi_prior"] = theta_prior
+        simulations["sbi_prior"] = x_prior
+
+        # Generate posterior samples / simulations
+        (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
+            self.simulator,
+            self.sbi_posterior,
+            self.summary_target,
+            return_ts=False,
+            num_samples=num_samples,
+            simulation_batch_size=simulation_batch_size,
+            rng_seed=rng_seed,
+            map_kwargs=map_kwargs,
+        )
+
+        parameter_samples["sbi_posterior"] = theta_post
+        simulations["sbi_posterior"] = x_post
+        parameter_samples["sbi_posterior_map"] = theta_map
+        simulations["sbi_posterior_map"] = x_map
+
+        if inplace:
+            self.parameter_samples = parameter_samples
+            self.simulations = simulations
+            return None
+        else:
+            return SBIResults(
+                self.simulator,
+                self.sbi_prior,
+                self.sbi_posterior,
+                self.calibration_posterior,
+                self.summary_target,
+                parameter_samples,
+                simulations,
+            )
+
+    def simulate_from_calibration_posterior(
+        self, return_ts=False, num_samples=1000, simulation_batch_size=None, rng_seed=1234
+    ):
+        """Convenience method for sampling from the given calibration posterior and corresponding calibration posterior predictive.
+
+        Args:
+            return_ts (bool): Whether to return time series, next to the parameter and simulation samples.
+            num_samples (int): Number of samples to generate.
+            simulation_batch_size (int, optional). Simulation batch size.
+            rng_seed (int, optional): Random seed, Defaults to 1234.
+            map_kwargs (_type_, optional): _description_. Defaults to dict().
+
+        Returns:
+            tuple: Tuple (sampled parameters, simulation_results) or tuple (sampled_parameters, timeseries, simulation_results) if return_ts = True.
+        """
+        # PRNG
+        prng = jax.random.PRNGKey(rng_seed)
+
+        if self.calibration_posterior is not None:
+            # Posterior mean
+            theta_cm = self.calibration_posterior.mean.reshape((1, -1)) * jnp.ones((num_samples, 1))
+            # Full calibration posterior
+            logger.info(f"Running {num_samples} simulations from calibration posterior")
+            theta_cp = self.calibration_posterior.sample(prng, (num_samples,))
+
+            if return_ts:
+                ts_cm = self.simulator.simulate_ts(theta_cm, batch_size=simulation_batch_size, prng=prng)
+                x_cm = self.simulator.summarizer(**ts_cm)
+
+                ts_cp = self.simulator.simulate_ts(theta_cp, batch_size=simulation_batch_size, prng=prng)
+                x_cp = self.simulator.summarizer(**ts_cp)
+
+                return (theta_cm, ts_cm, x_cm), (theta_cp, ts_cp, x_cp)
+
+            else:
+                x_cm = self.simulator(theta_cm, batch_size=simulation_batch_size, prng=prng)
+                x_cp = self.simulator(theta_cp, batch_size=simulation_batch_size, prng=prng)
+
+                return (theta_cm, x_cm), (theta_cp, x_cp)
+        else:
+            raise ValueError("self.calibration_posterior is None")
 
     def simulate_from_sbi_prior(
         self,
@@ -215,22 +340,21 @@ class SBIResults:
         rng_seed=1234,
         map_kwargs=dict(),
     ):
-        """Convenience method for sampling from the given SBI prior.
+        """Convenience method for sampling from the given SBI prior and corresponding prior predictive.
 
         Args:
-            simulator (_type_): _description_
-            sbi_posterior (_type_): _description_
-            summary_target (_type_): _description_
-            num_samples (int, optional): _description_. Defaults to 1000.
-            simulation_batch_size (_type_, optional): _description_. Defaults to None.
-            rng_seed (int, optional): _description_. Defaults to 1234.
+            return_ts (bool): Whether to return time series, next to the parameter and simulation samples.
+            num_samples (int): Number of samples to generate.
+            simulation_batch_size (int, optional). Simulation batch size.
+            rng_seed (int, optional): Random seed, Defaults to 1234.
             map_kwargs (_type_, optional): _description_. Defaults to dict().
 
         Returns:
-            _type_: _description_
+            tuple: Tuple (sampled parameters, simulation_results) or tuple (sampled_parameters, timeseries, simulation_results) if return_ts = True.
         """
         prng = jax.random.PRNGKey(rng_seed)
-        theta_prior = self.prior.sample(prng, (num_samples,))
+        logger.info(f"Running {num_samples} simulations for SBI prior")
+        theta_prior = self.sbi_prior.sample(prng, (num_samples,))
         if return_ts:
             ts_prior = self.simulator.simulate_ts(theta_prior, batch_size=simulation_batch_size, prng=prng)
             x_prior = self.simulator.summarizer(**ts_prior)
@@ -254,16 +378,15 @@ class SBIResults:
         """Convenience method for sampling from the given SBI posterior and corresponding posterior predictive.
 
         Args:
-            simulator (_type_): _description_
-            sbi_posterior (_type_): _description_
-            summary_target (_type_): _description_
-            num_samples (int, optional): _description_. Defaults to 1000.
-            simulation_batch_size (_type_, optional): _description_. Defaults to None.
-            rng_seed (int, optional): _description_. Defaults to 1234.
+            summary_target (jax.Array): Target summary statistics for the posterior. If none, then self.summary_target is taken.
+            return_ts (bool): Whether to return time series, next to the parameter and simulation samples.
+            num_samples (int): Number of samples to generate.
+            simulation_batch_size (int, optional). Simulation batch size.
+            rng_seed (int, optional): Random seed, Defaults to 1234.
             map_kwargs (_type_, optional): _description_. Defaults to dict().
 
         Returns:
-            _type_: _description_
+            tuple: Tuple (sampled parameters, simulation_results) or tuple (sampled_parameters, timeseries, simulation_results) if return_ts = True.
         """
         # reset torch RNG seed
         torch.manual_seed(rng_seed)
