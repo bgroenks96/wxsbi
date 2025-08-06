@@ -135,7 +135,9 @@ class SBIResults:
         self.parameter_samples = parameter_samples
         self.simulations = simulations
 
-    def with_target(self, summary_target, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()):
+    def with_target(
+        self, summary_target, num_samples=None, simulation_batch_size=None, rng_seed=1234, map_kwargs=dict()
+    ):
         """Resamples from the SBI posterior for an alternative choice of `summary_target` and returns a
         new `SBIResults` object with the updated posterior samples and simulations.
 
@@ -148,16 +150,18 @@ class SBIResults:
         Returns:
             _type_: _description_
         """
-        num_samples = self.parameter_samples["sbi_posterior"].shape[0]
+        if num_samples is None:
+            num_samples = self.parameter_samples["sbi_posterior"].shape[0]
         simulation_batch_size = num_samples if simulation_batch_size is None else simulation_batch_size
         (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
             self.simulator,
             self.sbi_posterior,
             summary_target,
-            num_samples,
-            simulation_batch_size,
-            rng_seed,
-            map_kwargs,
+            return_ts=False,
+            num_samples=num_samples,
+            simulation_batch_size=simulation_batch_size,
+            rng_seed=rng_seed,
+            map_kwargs=map_kwargs,
         )
         parameter_samples = self.parameter_samples.copy()
         simulations = self.simulations.copy()
