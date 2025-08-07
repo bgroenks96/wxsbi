@@ -13,11 +13,12 @@ from numpyro.infer import HMCECS, MCMC, NUTS, SVI, Predictive, TraceGraph_ELBO
 from numpyro.infer.autoguide import AutoDelta, AutoMultivariateNormal
 
 from ..distributions import StochasticFunctionDistribution
-from ..utils import extract_time_vars
+from ..types import AbstractTimeSeriesModel
+from ..utils import check_if_list_in_string, extract_time_vars
 from .wgen_gamlss import WGEN_GAMLSS
 
 
-class WGEN(ABC):
+class WGEN(AbstractTimeSeriesModel):
 
     def __init__(
         self,
@@ -72,7 +73,9 @@ class WGEN(ABC):
         initial_states = self.model.get_initial_states(data, order=order)
         return initial_states
 
-    def prior(self, predictors, initial_states, **extra_kwargs):
+    def prior(self, predictors=None, initial_states=None, batch_idx=0, **extra_kwargs):
+        predictors = predictors if predictors is not None else self.predictors[batch_idx, :, :]
+        initial_states = initial_states if initial_states is not None else self.initial_states[batch_idx, :, :]
         return self.model.prior(predictors, initial_states, **self.model_kwargs, **extra_kwargs)
 
     def step(
@@ -129,7 +132,6 @@ class WGEN(ABC):
         timestamps=None,
         predictors=None,
         initial_state=None,
-        observable=None,
         batch_size=None,
         prior_mask=True,
         **kwargs,
@@ -140,7 +142,6 @@ class WGEN(ABC):
             timestamps (_type_, optional): time stamps in the same format given by `extract_time_vars`. Defaults to None.
             predictors (_type_, optional): predictors for each time step. Defaults to None.
             initial_state (_type_, optional): initial state at start of rollout. Defaults to None.
-            observable (_type_, optional): observable function. Defaults to None.
             batch_size (_type_, optional): batch size over which to broadcast predictors; defaults to the batch shape of the given predictors.
             prior_mask (bool, optional): True if the prior should be included in the log density of the model, False otherwise. Defaults to True.
 
@@ -149,83 +150,33 @@ class WGEN(ABC):
         """
         timestamps = timestamps if timestamps is not None else self.timestamps[:, self.first_valid_idx :, :]
         assert (
-            len(timestamps.shape) == 3 and timestamps.shape[2] == 4
-        ), "timestamps must have shape (batch_size, timesteps, 4)"
+            len(timestamps.shape) == 3 and timestamps.shape[2] == self.timestamps.shape[2]
+        ), f"timestamps must have shape (batch_size, timesteps, {self.timestamps.shape[2]})"
         predictors = predictors if predictors is not None else self.predictors[:, self.first_valid_idx :, :]
         if batch_size is None:
             batch_size = predictors.shape[0]
         else:
             predictors = predictors * jnp.ones((batch_size, 1, 1))
             timestamps = timestamps * jnp.ones((batch_size, 1, 1))
-        initial_state = (
-            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
-        )
+        # If no initial state is specified, choose first valid time index
+        # Note that the initial state must have shape (batch, vars, lags)
+        if initial_state is None:
+            initial_state = self.initial_states[:, self.first_valid_idx, :, :]
+
+        # broadcast initial state over batch dimension
         initial_state = initial_state * jnp.ones((batch_size, *initial_state.shape[1:]))
-        # sample prior
+
+        # Sample prior
         with mask(mask=prior_mask):
             step = self.prior(predictors, initial_state, **kwargs)
 
+        # concatenate timestamps and predictors
         inputs = jnp.concat([timestamps, predictors], axis=-1)
+        # we need to swap the batch and time dimension since scan runs over the leading axis.
+        scan_inputs = jnp.swapaxes(inputs, 0, 1)
         # scan over inputs with step/transition function;
-        # note that we need to swap the batch and time dimension since scan runs over the leading axis.
-        _, outputs = scan(step, initial_state, jnp.swapaxes(inputs, 0, 1))
-        if observable is not None:
-            obsv = observable(timestamps, *outputs)
-            return outputs, obsv
-        else:
-            return outputs, None
-
-    def simulator(
-        self,
-        timestamps=None,
-        predictors=None,
-        initial_state=None,
-        observable=None,
-        rng_seed=0,
-        **prior_kwargs,
-    ):
-        """Constructs a wrapper function `f(theta)` that invokes `simulate` with the given `observable`.
-           The parameters `theta` are assumed to be in the unconstrained (transformed) sample space of the model.
-           Returns the simulator function as well as the corresponding prior distribution.
-
-        Args:
-            observable (_type_, optional): observable function for `simulate`. Defaults to None.
-            rng_seed (int, optional): random seed. Defaults to 0.
-
-        Returns:
-            tuple: simulator_fn, prior
-        """
-        timestamps = self.timestamps if timestamps is None else timestamps
-        predictors = self.predictors if predictors is None else predictors
-        initial_state = (
-            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
-        )
-        prior = StochasticFunctionDistribution(
-            self.prior,
-            fn_args=(predictors, initial_state),
-            fn_kwargs=prior_kwargs,
-            unconstrained=True,
-            rng_seed=rng_seed,
-        )
-
-        def simulator(_theta):
-            theta = _theta if len(_theta.shape) > 1 else _theta.reshape((1, -1))
-            batch_size = theta.shape[0]
-            t = timestamps * jnp.ones((batch_size, *timestamps.shape[1:]))
-            X = predictors * jnp.ones((batch_size, *predictors.shape[1:]))
-            params = {
-                k: v for k, v in prior.constrain(theta, as_dict=True).items()
-            }  # .squeeze(1) when using older models
-            with numpyro.handlers.seed(rng_seed=rng_seed):
-                with numpyro.handlers.condition(data=params):
-                    if observable is not None:
-                        outputs, obs = self.simulate(t, X, observable=observable, batch_size=batch_size)
-                        return obs.T
-                    else:
-                        outputs, _ = self.simulate(t, X)
-                        return jnp.permute_dims(jnp.stack(outputs), (2, 1, 0))
-
-        return simulator, prior
+        states, outputs = scan(step, initial_state, scan_inputs)
+        return outputs, states
 
     def fit(self, *args, method="svi", **kwargs):
         if method == "svi":
@@ -252,6 +203,37 @@ class WGEN(ABC):
                 params[k] = jnp.array(v)
         return params
 
+    def get_parameter_mask(self, ignore_elems, guide=None):
+        guide = self.guide if guide is None else guide
+        return jnp.concat(
+            [
+                (jnp.zeros_like(x) if check_if_list_in_string(ignore_elems, k) else jnp.ones_like(x))
+                for k, x in guide._init_locs.items()
+            ]
+        )
+
+    def as_distribution(
+        self,
+        timestamps=None,
+        predictors=None,
+        initial_state=None,
+        rng_seed=1234,
+        **prior_kwargs,
+    ):
+        timestamps = self.timestamps if timestamps is None else timestamps
+        predictors = self.predictors if predictors is None else predictors
+        initial_state = (
+            initial_state if initial_state is not None else self.initial_states[:, self.first_valid_idx, :, :]
+        )
+        dist = StochasticFunctionDistribution(
+            self.prior,
+            fn_args=(predictors, initial_state),
+            fn_kwargs=prior_kwargs,
+            unconstrained=True,
+            rng_seed=rng_seed,
+        )
+        return dist
+
     def sample(self, fit_result, **kwargs):
         if fit_result is numpyro.infer.svi.SVIRunResult:
             return self._sample_svi(fit_result.params, **kwargs)
@@ -259,7 +241,14 @@ class WGEN(ABC):
             raise (Exception("unrecognized fit_result type"))
 
     def _sample_svi(
-        self, params, guide=None, timestamps=None, predictors=None, observable=None, num_samples=100, rng_seed=0
+        self,
+        params,
+        guide=None,
+        timestamps=None,
+        predictors=None,
+        observable=None,
+        num_samples=100,
+        rng_seed=0,
     ):
         prng = jax.random.PRNGKey(rng_seed)
         guide = self.guide if guide is None else guide
