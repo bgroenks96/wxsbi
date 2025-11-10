@@ -114,8 +114,8 @@ class BatchSimulator(ABC):
                         }
                     )
                 else:
-                    xs.append(**self.simulate_ts_func(theta[lo:hi], prng))
-            x = {key: jnp.concat([d[key] for d in x], axis=0) for key in x[0].keys()}
+                    xs.append(self.simulate_ts_func(theta[lo:hi], prng))  # fixme
+            x = {key: jnp.concat([d[key] for d in xs], axis=0) for key in xs[0].keys()}
         else:
             x = self.simulate_ts_func(theta, prng)
             if observables is not None:
@@ -335,7 +335,7 @@ class SBIResults:
                 }
             else:
                 return_dict = {}
-                if "sbi_prior" in which:
+                if "sbi_prior" in which:  # TODO: observables is not passed down.
                     _, ts, _ = self.simulate_from_sbi_prior(
                         return_ts=True,
                         num_samples=num_samples,
