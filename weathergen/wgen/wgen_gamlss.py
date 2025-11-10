@@ -12,7 +12,9 @@ from .. import glm, utils
 
 class WGEN_GAMLSS(ABC):
 
-    def get_initial_states(self, obs_or_shape: dict | tuple[int, int], order=1, dropna=True):
+    def get_initial_states(
+        self, obs_or_shape: dict | tuple[int, int], order=1, dropna=True
+    ):
         if isinstance(obs_or_shape, tuple):
             # default to batch_size = 1 and one time step
             return jnp.zeros((*obs_or_shape, order, 2))
@@ -24,7 +26,9 @@ class WGEN_GAMLSS(ABC):
         state = jnp.concat([prec_state, Tavg_state, Trange_state], axis=-2)
         # concatenate lagged states
         timelen = state.shape[1]
-        return jnp.concat([state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-1)
+        return jnp.concat(
+            [state[:, i : timelen - order + i, :, :] for i in range(order)], axis=-1
+        )
 
     def get_obs(self, data: pd.DataFrame):
         """Returns the observations"""
@@ -88,7 +92,9 @@ class WGEN_GAMLSS(ABC):
             **kwargs,
         )
         # precipitation
-        precip_step = precip_model(num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs)
+        precip_step = precip_model(
+            num_predictors, pred_effect_scale, freqs=prec_freqs, order=order, **kwargs
+        )
         # air temperature range and skew
         tair_range_skew_step = Trange_skew_model(
             num_predictors,
@@ -98,16 +104,31 @@ class WGEN_GAMLSS(ABC):
             **kwargs,
         )
 
-        def step(state, inputs, obs={"prec": None, "Tavg": None, "Trange": None, "Tskew": None}):
-            assert state.shape[0] == inputs.shape[0], "state and input batch dimensions do not match"
-            assert state.shape[2] == order, f"state lag dimension does not match order={order}"
+        def step(
+            state,
+            inputs,
+            obs={"prec": None, "Tavg": None, "Trange": None, "Tskew": None},
+        ):
+            assert (
+                state.shape[0] == inputs.shape[0]
+            ), "state and input batch dimensions do not match"
+            assert (
+                state.shape[2] == order
+            ), f"state lag dimension does not match order={order}"
             # unpack state and input tensors;
+            numpyro.deterministic(
+                "t",
+                inputs[:, :4].T,
+            )
+
             # state is assumed to have shape (batch, vars, lag)
             prec_prev = state[:, 0, :]
             Tavg_prev = state[:, 1, :]
             Trange_prev = state[:, 2, :]
             # mean daily air temperature
-            Tavg = tair_mean_step(Tavg_prev, inputs, obs["Tavg"])  # Tavg_loc, Tavg_seasonal_anomaly
+            Tavg = tair_mean_step(
+                Tavg_prev, inputs, obs["Tavg"]
+            )  # Tavg_loc, Tavg_seasonal_anomaly
             Tavg_var = Tavg.reshape((-1, 1))
             # precipitation
             prec = precip_step((prec_prev, Tavg_var), inputs, obs["prec"])
@@ -116,7 +137,12 @@ class WGEN_GAMLSS(ABC):
                 (Tavg_var, prec, Trange_prev), inputs, obs["Trange"], obs["Tskew"]
             )
             newstate = jnp.expand_dims(jnp.stack([prec, Tavg, Trange]).T, axis=-1)
-            return jnp.concat([state[:, :, 1:], newstate], axis=-1), (prec, Tmin, Tavg, Tmax)
+            return jnp.concat([state[:, :, 1:], newstate], axis=-1), (
+                prec,
+                Tmin,
+                Tavg,
+                Tmax,
+            )
 
         return step
 
@@ -137,7 +163,9 @@ def Tavg_model(
         Tavg_loc_lag_effects,
         Tavg_loc_seasonal_effects,
     )
-    Tavg_loc_pred_effects = glm.LinearEffects("Tavg_loc_pred", num_predictors, scale_or_cov=jnp.diag(pred_effect_scale))
+    Tavg_loc_pred_effects = glm.LinearEffects(
+        "Tavg_loc_pred", num_predictors, scale_or_cov=jnp.diag(pred_effect_scale)
+    )
     Tavg_loc_glm = glm.GLM(
         Tavg_loc_lag_effects,
         Tavg_loc_seasonal_effects,
@@ -151,7 +179,9 @@ def Tavg_model(
         "Tavg_loc_scale_pred", num_predictors, scale_or_cov=jnp.diag(pred_effect_scale)
     )
     if Tavg_lag_in_scale:
-        Tavg_scale_lag_effects = glm.LinearEffects("Tavg_scale_lag", order, scale_or_cov=0.2)
+        Tavg_scale_lag_effects = glm.LinearEffects(
+            "Tavg_scale_lag", order, scale_or_cov=0.2
+        )
         Tavg_scale_glm = glm.GLM(
             Tavg_scale_seasonal_effects,
             Tavg_scale_pred_effects,
@@ -190,11 +220,18 @@ def Tavg_model(
         # Sample Tavg
         Tavg_mask = jnp.isfinite(Tavg_obs) if Tavg_obs is not None else True
         with mask(mask=Tavg_mask):
-            Tavg = numpyro.sample("Tavg", dist.Normal(Tavg_loc, Tavg_scale), obs=Tavg_obs)
+            Tavg = numpyro.sample(
+                "Tavg", dist.Normal(Tavg_loc, Tavg_scale), obs=Tavg_obs
+            )
 
         Tavg_sample_seasonal_anomaly = numpyro.deterministic(
             "Tavg_sample_seasonal_anomaly",
-            Tavg - jnp.sum(Tavg_loc_seasonal_effects.get_coefs() * Tavg_loc_seasonal_effects.get_predictors(t), axis=1),
+            Tavg
+            - jnp.sum(
+                Tavg_loc_seasonal_effects.get_coefs()
+                * Tavg_loc_seasonal_effects.get_predictors(t),
+                axis=1,
+            ),
         )
         return Tavg  # , Tavg_loc, Tavg_sample_seasonal_anomaly
 
@@ -210,7 +247,9 @@ def precip_model(
 ):
     # Occurrence
     precip_occ_seasonal_effects = glm.SeasonalEffects("precip_occ_seasonal", freqs)
-    precip_occ_lag_effects = glm.LinearEffects("precip_occ_lag", 2 * order, scale_or_cov=0.2)
+    precip_occ_lag_effects = glm.LinearEffects(
+        "precip_occ_lag", 2 * order, scale_or_cov=0.2
+    )
     precip_occ_lag_seasonal_interaction_effects = glm.InteractionEffects(
         "precip_occ_lag_seasonal_interaction",
         precip_occ_lag_effects,
@@ -224,7 +263,9 @@ def precip_model(
         precip_occ_seasonal_effects,
         scale_or_cov=0.5,
     )
-    precip_occ_pred_effects = glm.LinearEffects("precip_occ_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    precip_occ_pred_effects = glm.LinearEffects(
+        "precip_occ_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     precip_occ_glm = glm.GLM(
         precip_occ_seasonal_effects,
         precip_occ_lag_effects,
@@ -243,14 +284,18 @@ def precip_model(
         precip_loc_Tavg_effects,
         precip_loc_seasonal_effects,
     )
-    precip_loc_lag_effects = glm.LinearEffects("precip_loc_lag", order, scale_or_cov=0.2)
+    precip_loc_lag_effects = glm.LinearEffects(
+        "precip_loc_lag", order, scale_or_cov=0.2
+    )
     precip_loc_lag_seasonal_interaction_effects = glm.InteractionEffects(
         "precip_loc_lag_seasonal_interaction",
         precip_loc_lag_effects,
         precip_loc_seasonal_effects,
         scale_or_cov=0.2,
     )
-    precip_loc_pred_effects = glm.LinearEffects("precip_loc_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    precip_loc_pred_effects = glm.LinearEffects(
+        "precip_loc_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     precip_loc_glm = glm.GLM(
         precip_loc_seasonal_effects,
         precip_loc_Tavg_effects,
@@ -282,19 +327,29 @@ def precip_model(
         lag_preds = jnp.concat([prev_dry, prev_log_prec], axis=1)
 
         # Parameters
-        p_wet, _ = precip_occ_glm(t, lag_preds, (lag_preds, t), Tavg, (Tavg, t), predictors)
+        p_wet, _ = precip_occ_glm(
+            t, lag_preds, (lag_preds, t), Tavg, (Tavg, t), predictors
+        )
         p_wet = numpyro.deterministic("p_wet", p_wet)
-        precip_gamma_loc, _ = precip_loc_glm(t, Tavg, (Tavg, t), prev_log_prec, (prev_log_prec, t), predictors)
+        precip_gamma_loc, _ = precip_loc_glm(
+            t, Tavg, (Tavg, t), prev_log_prec, (prev_log_prec, t), predictors
+        )
         precip_gamma_loc = numpyro.deterministic("precip_gamma_loc", precip_gamma_loc)
         precip_gamma_shape, _ = precip_shape_glm(t, predictors)
-        precip_gamma_shape = numpyro.deterministic("precip_gamma_shape", precip_gamma_shape)
-        precip_gamma_rate = numpyro.deterministic("precip_gamma_rate", precip_gamma_shape / precip_gamma_loc)
+        precip_gamma_shape = numpyro.deterministic(
+            "precip_gamma_shape", precip_gamma_shape
+        )
+        precip_gamma_rate = numpyro.deterministic(
+            "precip_gamma_rate", precip_gamma_shape / precip_gamma_loc
+        )
 
         # Sample precipication from bernoulli-gamma with prob p_wet
         prec_occ_obs = prec_obs > 0.0 if prec_obs is not None else None
         prec_mask = prec_occ_obs if prec_occ_obs is not None else True
         with mask(mask=jnp.isfinite(prec_obs) if prec_obs is not None else True):
-            prec_occ = numpyro.sample("prec_occ", dist.Bernoulli(p_wet), obs=prec_occ_obs)
+            prec_occ = numpyro.sample(
+                "prec_occ", dist.Bernoulli(p_wet), obs=prec_occ_obs
+            )
         with mask(mask=prec_mask):
             prec_amount = numpyro.sample(
                 "prec_amount",
@@ -317,15 +372,21 @@ def Trange_skew_model(
 ):
     # Trange mean
     Trange_mean_seasonal_effects = glm.SeasonalEffects("Trange_mean_seasonal", freqs)
-    Trange_mean_lag_effects = glm.LinearEffects("Trange_mean_lag", order, scale_or_cov=0.1)
-    Trange_mean_pred_effects = glm.LinearEffects("Trange_mean_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    Trange_mean_lag_effects = glm.LinearEffects(
+        "Trange_mean_lag", order, scale_or_cov=0.1
+    )
+    Trange_mean_pred_effects = glm.LinearEffects(
+        "Trange_mean_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     Trange_mean_seasonal_lag_interaction_effects = glm.InteractionEffects(
         "Trange_mean_lag_seasonal_interaction",
         Trange_mean_lag_effects,
         Trange_mean_seasonal_effects,
         scale_or_cov=0.2,
     )
-    Trange_mean_Tavg_effects = glm.LinearEffects("Trange_mean_Tavg", 1, scale_or_cov=0.1)
+    Trange_mean_Tavg_effects = glm.LinearEffects(
+        "Trange_mean_Tavg", 1, scale_or_cov=0.1
+    )
     Trange_mean_seasonal_Tavg_interaction_effects = glm.InteractionEffects(
         "Trange_mean_Tavg_seasonal_interaction",
         Trange_mean_Tavg_effects,
@@ -344,8 +405,12 @@ def Trange_skew_model(
 
     # Trange dispersion
     Trange_disp_seasonal_effects = glm.SeasonalEffects("Trange_disp_seasonal", freqs)
-    Trange_disp_lag_effects = glm.LinearEffects("Trange_disp_lag", order, scale_or_cov=0.1)
-    Trange_disp_pred_effects = glm.LinearEffects("Trange_disp_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    Trange_disp_lag_effects = glm.LinearEffects(
+        "Trange_disp_lag", order, scale_or_cov=0.1
+    )
+    Trange_disp_pred_effects = glm.LinearEffects(
+        "Trange_disp_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     Trange_disp_seasonal_lag_interaction_effects = glm.InteractionEffects(
         "Trange_disp_lag_seasonal_interaction",
         Trange_disp_lag_effects,
@@ -369,7 +434,9 @@ def Trange_skew_model(
         Tskew_mean_seasonal_effects,
         scale_or_cov=0.2,
     )
-    Tskew_mean_pred_effects = glm.LinearEffects("Tskew_mean_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    Tskew_mean_pred_effects = glm.LinearEffects(
+        "Tskew_mean_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     Tskew_mean_glm = glm.GLM(
         Tskew_mean_seasonal_effects,
         Tskew_mean_Tavg_effects,
@@ -381,7 +448,9 @@ def Trange_skew_model(
     # Tskew dispersion
     Tskew_disp_seasonal_effects = glm.SeasonalEffects("Tskew_disp_seasonal", freqs)
     Tskew_disp_Tavg_effects = glm.LinearEffects("Tskew_disp_Tavg", 1, scale_or_cov=0.1)
-    Tskew_disp_pred_effects = glm.LinearEffects("Tskew_disp_pred", num_predictors, scale_or_cov=pred_effect_scale)
+    Tskew_disp_pred_effects = glm.LinearEffects(
+        "Tskew_disp_pred", num_predictors, scale_or_cov=pred_effect_scale
+    )
     Tskew_disp_glm = glm.GLM(
         Tskew_disp_seasonal_effects,
         Tskew_disp_Tavg_effects,
