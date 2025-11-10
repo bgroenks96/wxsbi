@@ -65,9 +65,12 @@ class BatchSimulator(ABC):
         if batch_size < num_samples:
             xs = []
             for i in tqdm(range(0, num_samples, batch_size)):
+                prng, subkey = jax.random.split(prng)
                 lo = i
                 hi = min(i + batch_size, num_samples)
-                xs.append(self.summarizer(**self.simulate_ts_func(theta[lo:hi], prng)))
+                xs.append(
+                    self.summarizer(**self.simulate_ts_func(theta[lo:hi], subkey))
+                )
             x = jnp.concat(xs, axis=0)
         else:
             x = self.summarizer(**self.simulate_ts_func(theta, prng))
@@ -101,6 +104,7 @@ class BatchSimulator(ABC):
         if batch_size < num_samples:
             xs = []
             for i in tqdm(range(0, num_samples, batch_size)):
+                prng, subkey = jax.random.split(prng)
                 lo = i
                 hi = min(i + batch_size, num_samples)
                 if observables is not None:
@@ -108,13 +112,13 @@ class BatchSimulator(ABC):
                         {
                             key: val
                             for key, val in self.simulate_ts_func(
-                                theta[lo:hi], prng
+                                theta[lo:hi], subkey
                             ).items()
                             if key in observables
                         }
                     )
                 else:
-                    xs.append(self.simulate_ts_func(theta[lo:hi], prng))  # fixme
+                    xs.append(self.simulate_ts_func(theta[lo:hi], subkey))
             x = {key: jnp.concat([d[key] for d in xs], axis=0) for key in xs[0].keys()}
         else:
             x = self.simulate_ts_func(theta, prng)
