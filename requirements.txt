@@ -1,10 +1,8 @@
 netcdf4
-ipywidgets
-click
-ipykernel
 xarray
+tqdm
+matplotlib
+jax
 numpyro
-jax2torch
 torch
-zuko
 sbi>=0.23.0
