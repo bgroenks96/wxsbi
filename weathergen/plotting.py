@@ -552,6 +552,8 @@ def Tmin_overview(obs, svi_preds, basin_data_train):
 
     gs = GridSpec(4, 4, figure=fig)
 
+    # make copy of obs dictionary
+    obs = obs.copy()
     obs["Tmin"] = basin_data_train["Tair_min"]
 
     # Row 1
@@ -578,12 +580,14 @@ def Tmin_overview(obs, svi_preds, basin_data_train):
     ax_row_4[3].axis("off")
 
 
-def Tmax_overview(obs, svi_preds, basin_data_train):
+def Tmax_overview(obs: dict, svi_preds, basin_data_train):
     fig = plt.figure(layout="tight", figsize=(10, 10))
     fig.suptitle("Tmax")
 
     gs = GridSpec(4, 4, figure=fig)
-
+    
+    # make copy of obs dictionary
+    obs = obs.copy()
     obs["Tmax"] = basin_data_train["Tair_max"]
 
     # Row 1
