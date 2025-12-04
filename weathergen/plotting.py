@@ -431,7 +431,7 @@ def get_temp_precip_cor_plot(
 from matplotlib.gridspec import GridSpec
 
 
-def Tavg_overview(obs, svi_preds, basin_data_train):
+def Tavg_overview(obs, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 10))
     fig.suptitle("Tavg")
 
@@ -448,20 +448,20 @@ def Tavg_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[1])
-    get_max_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[2])
-    get_min_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[3])
+    get_mean_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_max_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[2], colors=colors)
+    get_min_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_3[3], colors=colors)
 
     # Row 4
     ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[0], lag=1)
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[1], lag=2)
-    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[0], lag=1, colors=colors)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[1], lag=2, colors=colors)
+    get_acf_plot(obs["Tavg"], svi_preds["Tavg"], basin_data_train.index, ax=ax_row_4[2], lag=3, colors=colors)
     ax_row_4[3].axis("off")
 
 
-def Trange_overview(obs, svi_preds, basin_data_train):
+def Trange_overview(obs, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 7.5))
     fig.suptitle("Trange")
 
@@ -478,13 +478,13 @@ def Trange_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[1])
-    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[2], lag=1)
-    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[3], lag=2)
+    get_mean_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[2], lag=1, colors=colors)
+    get_acf_plot(obs["Trange"], svi_preds["Trange"], basin_data_train.index, ax=ax_row_3[3], lag=2, colors=colors)
 
 
-def Tskew_overview(obs, svi_preds, basin_data_train):
+def Tskew_overview(obs, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 7.5))
     fig.suptitle("Tskew")
 
@@ -501,13 +501,13 @@ def Tskew_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[1])
-    get_max_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[2])
-    get_min_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[3])
+    get_mean_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_max_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[2], colors=colors)
+    get_min_plot(obs["Tskew"], svi_preds["Tskew"], basin_data_train.index, ax=ax_row_3[3], colors=colors)
 
 
-def prec_overview(obs, svi_preds, basin_data_train):
+def prec_overview(obs, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 12.5))
     fig.suptitle("Precipitation")
 
@@ -524,34 +524,36 @@ def prec_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[1])
-    get_max_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[2])
-    get_prop_wet_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[3])
+    get_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_max_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[2], colors=colors)
+    get_prop_wet_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_3[3], colors=colors)
 
     # Row 4
     ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
-    get_cond_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[0])
-    get_cond_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[1])
-    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[2], lag=1)
-    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[3], lag=2)
+    get_cond_mean_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[0], colors=colors)
+    get_cond_std_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[1], colors=colors)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[2], lag=1, colors=colors)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_4[3], lag=2, colors=colors)
 
     # Row 5
     ax_row_5 = [fig.add_subplot(gs[4, i]) for i in range(4)]
-    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[0], lag=3)
+    get_acf_plot(obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[0], lag=3, colors=colors)
     get_temp_precip_cor_plot(
-        obs["Tavg"], svi_preds["Tavg"], obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[1]
+        obs["Tavg"], svi_preds["Tavg"], obs["prec"], svi_preds["prec"], basin_data_train.index, ax=ax_row_5[1], colors=colors
     )
     ax_row_5[2].axis("off")
     ax_row_5[3].axis("off")
 
 
-def Tmin_overview(obs, svi_preds, basin_data_train):
+def Tmin_overview(obs, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 10))
     fig.suptitle("Tmin")
 
     gs = GridSpec(4, 4, figure=fig)
 
+    # make copy of obs dictionary
+    obs = obs.copy()
     obs["Tmin"] = basin_data_train["Tair_min"]
 
     # Row 1
@@ -565,25 +567,27 @@ def Tmin_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[1])
-    get_max_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[2])
-    get_min_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[3])
+    get_mean_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_max_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[2], colors=colors)
+    get_min_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_3[3], colors=colors)
 
     # Row 4
     ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
-    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[0], lag=1)
-    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[1], lag=2)
-    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[0], lag=1, colors=colors)
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[1], lag=2, colors=colors)
+    get_acf_plot(obs["Tmin"], svi_preds["Tmin"], basin_data_train.index, ax=ax_row_4[2], lag=3, colors=colors)
     ax_row_4[3].axis("off")
 
 
-def Tmax_overview(obs, svi_preds, basin_data_train):
+def Tmax_overview(obs: dict, svi_preds, basin_data_train, colors=None):
     fig = plt.figure(layout="tight", figsize=(10, 10))
     fig.suptitle("Tmax")
 
     gs = GridSpec(4, 4, figure=fig)
-
+    
+    # make copy of obs dictionary
+    obs = obs.copy()
     obs["Tmax"] = basin_data_train["Tair_max"]
 
     # Row 1
@@ -597,16 +601,16 @@ def Tmax_overview(obs, svi_preds, basin_data_train):
 
     # Row 3
     ax_row_3 = [fig.add_subplot(gs[2, i]) for i in range(4)]
-    get_mean_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[0])
-    get_std_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[1])
-    get_max_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[2])
-    get_min_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[3])
+    get_mean_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[0], colors=colors)
+    get_std_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[1], colors=colors)
+    get_max_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[2], colors=colors)
+    get_min_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_3[3], colors=colors)
 
     # Row 4
     ax_row_4 = [fig.add_subplot(gs[3, i]) for i in range(4)]
-    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[0], lag=1)
-    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[1], lag=2)
-    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[2], lag=3)
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[0], lag=1, colors=colors)
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[1], lag=2, colors=colors)
+    get_acf_plot(obs["Tmax"], svi_preds["Tmax"], basin_data_train.index, ax=ax_row_4[2], lag=3, colors=colors)
     ax_row_4[3].axis("off")
 
 

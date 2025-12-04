@@ -71,8 +71,8 @@ def cumulative_dry_days(precip, threshold=0.0, axis=0):
     Returns:
         _type_: Scalar average CDD
     """
-    spells = dry_spells(precip, threshold)
-    cdd = jnp.nanmean(jnp.where(spells > 0, spells, jnp.nan), axis=axis)
+    spells = dry_spells(jnp.moveaxis(precip, axis, 0), threshold)
+    cdd = jnp.nanmean(jnp.where(spells > 0, spells, jnp.nan), axis=0)
     return jnp.where(jnp.isfinite(cdd), cdd, 0.0)
 
 

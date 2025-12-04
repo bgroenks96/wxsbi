@@ -1,7 +1,9 @@
 # wxsbi
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15448999.svg)](https://doi.org/10.5281/zenodo.15448999)
+
 A Pyton toolkit for building stochastic weather generators using [numpyro](https://num.pyro.ai/en/stable/index.html) and [simulation-based inference](https://sbi-dev.github.io/sbi/0.22/).
 
-Authors: Brian Groenke (AWI Potsdam, UFZ Leipzig, TU Berlin), Jakob Wessel (University of Exeter)
+Authors: Brian Groenke (Potsdam Institute for Climate Impact Research - PIK), Jakob Wessel (University of Exeter)
 
 ## Disclaimer
 
@@ -35,9 +37,9 @@ data = wx.data.load_time_series_csv("path/to/data_file.csv", name_map)
 # construct WGEN
 wgen = wx.WGEN(data)
 # fit using stochastic variational inference
-fit_result = wgen.fit("svi")
+fit_result = wgen.fit()
 ```
-The `WGEN` class 
+The `WGEN` class encapsulates all relevant data, parameters, and configuration settings for the weather generator. Different model confifgurations can be selected via the `model` keyword argument. The default model is the one used in the manuscript, `WGEN_GAMLSS`.
 
 Currently, the WGEN-GAMLSS weather generator supports mean, minimum, and maximum daily air temperature as well as precipitation.
 
@@ -60,3 +62,7 @@ pip install git+https://github.com/bgroenks96/wxsbi
 ```
 
 Note that the repository currently consists of two separate modules with different dependencies: `weathergen` for weather generation and `wxsbi` for climatology matching.
+
+## Acknowledgements
+
+This work was made possible through funding from the Helmholtz Center for Environmental Research (UFZ) Leipzig and the Helmholtz Association.
