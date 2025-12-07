@@ -261,7 +261,7 @@ class SBIResults:
         if num_samples is None:
             num_samples = self.parameter_samples["sbi_posterior"].shape[0]
         batch_size = num_samples if batch_size is None else batch_size
-        (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
+        (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
             self.simulator,
             self.sbi_posterior,
             summary_target,
@@ -449,7 +449,7 @@ class SBIResults:
         simulations["sbi_prior"] = x_prior
 
         # Generate posterior samples / simulations
-        (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
+        (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
             self.simulator,
             self.sbi_posterior,
             self.summary_target,
@@ -544,7 +544,6 @@ class SBIResults:
         num_samples=1000,
         batch_size=None,
         rng_seed=1234,
-        map_kwargs=dict(),
     ):
         """Convenience method for sampling from the given SBI prior and corresponding prior predictive.
 
@@ -558,24 +557,14 @@ class SBIResults:
         Returns:
             tuple: Tuple (sampled parameters, simulation_results) or tuple (sampled_parameters, timeseries, simulation_results) if return_ts = True.
         """
-        prng = jax.random.PRNGKey(rng_seed)
-        logger.info(f"Running {num_samples} simulations for SBI prior")
-        prng, subprng = jax.random.split(prng)
-        theta_prior = self.sbi_prior.sample(subprng, (num_samples,))
-        if return_ts:
-            prng, subprng = jax.random.split(prng)
-            ts_prior = self.simulator.simulate_ts(
-                theta_prior, batch_size=batch_size, prng=subprng
-            )
-            x_prior = self.simulator.summarizer(**ts_prior)
-        else:
-            prng, subprng = jax.random.split(prng)
-            x_prior = self.simulator(theta_prior, batch_size=batch_size, prng=subprng)
-
-        if return_ts:
-            return theta_prior, ts_prior, x_prior
-        else:
-            return theta_prior, x_prior
+        return simulate_from_sbi_prior(
+            simulator=self.simulator,
+            sbi_prior=self.sbi_prior,
+            return_ts=return_ts,
+            num_samples=num_samples,
+            batch_size=batch_size,
+            rng_seed=rng_seed,
+        )
 
     def simulate_from_sbi_posterior(
         self,
@@ -602,7 +591,7 @@ class SBIResults:
         if summary_target is None:
             summary_target = self.summary_target
 
-        return _simulate_from_sbi_posterior(
+        return simulate_from_sbi_posterior(
             simulator=self.simulator,
             sbi_posterior=self.sbi_posterior,
             summary_target=summary_target,
@@ -783,7 +772,7 @@ def run_sbi(
         proposal = sbi_posterior
 
     prng, subprng = jax.random.split(prng)
-    (theta_post, x_post), (theta_map, x_map) = _simulate_from_sbi_posterior(
+    (theta_post, x_post), (theta_map, x_map) = simulate_from_sbi_posterior(
         simulator,
         sbi_posterior,
         summary_target,
@@ -809,7 +798,35 @@ def run_sbi(
     )
 
 
-def _simulate_from_sbi_posterior(
+def simulate_from_sbi_prior(
+    simulator,
+    sbi_prior,
+    return_ts=False,
+    num_samples=1000,
+    batch_size=None,
+    prng=None,
+    rng_seed=1234,
+):
+    prng = jax.random.PRNGKey(rng_seed)
+    logger.info(f"Running {num_samples} simulations for SBI prior")
+    prng, subprng = jax.random.split(prng)
+    theta_prior = sbi_prior.sample(subprng, (num_samples,))
+    if return_ts:
+        prng, subprng = jax.random.split(prng)
+        ts_prior = simulator.simulate_ts(
+            theta_prior, batch_size=batch_size, prng=subprng
+        )
+        x_prior = simulator.summarizer(**ts_prior)
+    else:
+        prng, subprng = jax.random.split(prng)
+        x_prior = simulator(theta_prior, batch_size=batch_size, prng=subprng)
+
+    if return_ts:
+        return theta_prior, ts_prior, x_prior
+    else:
+        return theta_prior, x_prior
+
+def simulate_from_sbi_posterior(
     simulator,
     sbi_posterior,
     summary_target,
